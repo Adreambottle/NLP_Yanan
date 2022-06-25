@@ -4,7 +4,7 @@
 
 ### 1.1. BERT model
 
-<img src="./plots/image.png" alt="image" style="zoom:25%;" />
+<img src="./plots/image.png" alt="image" width="300">
 
 
 BERT (Bidirectional Encoder Representations from Transformers) 
