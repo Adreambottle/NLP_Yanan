@@ -98,7 +98,7 @@ Model compression can be roughly divided into 5 types:
 	* weight pruning (Hard to implement, hard to speed up)
 	* Neuron pruning
 * **Knowledge Distillation** 
-  * Provide a small netwrok without too much loss on accuracy comparing with original network
+  * Provide a small network without too much loss on accuracy comparing with original network
 
 * **Parameter Quantization** 
   * Using less bits to represent a value 
