@@ -4,8 +4,7 @@
 
 ### 1.1. BERT model
 
-<img src="./plots/image.png" alt="image" width="300">
-
+<div align=center><img src="./plots/image.png" width="400"></div>
 
 BERT (Bidirectional Encoder Representations from Transformers) 
 
@@ -16,7 +15,7 @@ BERT (Bidirectional Encoder Representations from Transformers)
 
 #### 1.1.2. Architecture
 
-<img src="./plots/image (1).png" alt="image (1)" width="300">
+<div align=center><img src="./plots/image (1).png" width="400"></div>
 
 * BERT’s model architecture is a multi-layer bidirectional Transformer encoder
 * Layer number (Transformer blocks): `L` (Base 12, Large 24)
@@ -82,7 +81,8 @@ Label = NotNext
 * The core idea is to first train a complex network model, and then use the output of this complex network and the real label of the data to train a more Small network
 * The knowledge distillation framework usually contains a complex model (called the Teacher model) and a small model (called the Student model).
 
-<img src="./plots/image (2).png" alt="image (2)" style="zoom: 50%;" />
+<div align=center><img src="./plots/image (2).png" width="400"></div>
+
 
 #### 1.2.2 Why use distillation
 * Improve the accuracy of the model Imporve the Accuracy of the model
@@ -103,12 +103,14 @@ Model compression can be roughly divided into 5 types:
 * **Parameter Quantization** 
   * Using less bits to represent a value 
   * Weight clustering
-  	<img src="./plots/image (3).png" alt="image (3)" style="zoom:30%;" />
+<div align=center><img src="./plots/image (3).png" width="400"></div>
   * Represent frequent clusters by less bits, represent rare clusters by more bits	
-* **Parameter matrix approximation**
+
+* * **Parameter matrix approximation**
 	* The purpose of reducing matrix parameters is achieved by low-rank decomposition of the matrix or other methods* 
-    <img src="./plots/image (4).png" alt="image (4)" style="zoom:30%;" />
-* **Weight sharing**
+<div align=center><img src="./plots/image (4).png" width="400"></div>
+
+* * **Weight sharing**
 	* By sharing parameters, the network parameters can be reduced,
 	* For example, Albert shares the transformer layer;
 
@@ -129,7 +131,8 @@ Model compression can be roughly divided into 5 types:
 
 * Distilling Task-Specific Knowledge from BERT into Simple Neural Networks: https://arxiv.org/abs/1903.12136
 
-<img src="./plots/image (5).png" width="500">
+<div align=center><img src="./plots/image (5).png" width="500"></div>
+
 
 * The author proposed to distill knowledge from BERT into a single-layer BiLSTM. Across multiple datasets in paraphrasing, natural language inference, and sentiment classification, model achieve comparable results with ELMo, while using roughly 100 times fewer parameters and 15 times less inference time.
 
@@ -159,17 +162,17 @@ e.g. `"I loved the comedy"`  => `"I [MASK] the comedy`
 
 * Patient Knowledge Distillation for BERT Model Compression: https://arxiv.org/abs/1908.09355
 
-  <img src="./plots/image (6).png" width="500">
+<div align=center><img src="./plots/image (6).png" width="500"></div>
 
 * Loss:
 
-<img src="./plots/image (7).png" width="200">
-<img src="./plots/image (8).png" width="200">
-<img src="./plots/image (9).png" width="200">
+<div align=center><img src="./plots/image (7).png" width="250"></div>
+<div align=center><img src="./plots/image (8).png" width="250"></div>
+<div align=center><img src="./plots/image (9).png" width="250"></div>
 
 * The additional training loss introduced by the patient teacher is defined as the mean-square loss between the normalized hidden states:
 
-<img src="./plots/image (10).png" width="200">
+<div align=center><img src="./plots/image (10).png" width="250"></div>
 
 * Different from previous studies, BERT-PKD proposes Patient Knowledge Distillation, which extracts knowledge from the middle layer of the teacher model to avoid the phenomenon of overfitting when distilling the last layer.
 
@@ -181,4 +184,21 @@ e.g. `"I loved the comedy"`  => `"I [MASK] the comedy`
 
 * In order to initialize a better student model, the author proposes two strategies, 
 	* One is PKD-skip, which uses the `[2, 4, 6, 8, 10]` layers of `BERT-base`, 
-	* The other is PKD-last , using layers `[7, 8, 9, 10, 11]` layers of `BERT-base` (slightly better (<0.01).). 
+	* The other is PKD-last , using layers `[7, 8, 9, 10, 11]` layers of `BERT-base` (slightly better (<0.01)). 
+
+***
+
+## 2. DistilBert Model
+
+<div align=center><img src="./plots/image (11).png" width="300"></div>
+
+
+
+
+
+
+
+
+
+
+
