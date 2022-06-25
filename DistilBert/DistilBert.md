@@ -66,12 +66,11 @@ Label = NotNext
 	* Named Entity Recognition
 	* Machine translation
 
-#### 1.1.7 Parameter Numbers
+#### 1.1.8 Parameter Numbers
 
 * BERT-Base => 110M
 * BERT-Large => 340M
 
-***
 
 ### 1.2 Distillation
 
