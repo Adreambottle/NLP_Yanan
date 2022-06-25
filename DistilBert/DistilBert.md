@@ -374,7 +374,7 @@ loss_ce = self.ce_loss_fct(
     F.log_softmax(s_logits_slct / self.temperature, dim=-1),
     F.softmax(t_logits_slct / self.temperature, dim=-1)) * (self.temperature) ** 2
 ```
-    
+
 ##### 2.2.2.2 Loss_mlm
 ```python
 # lm_loss_fct = nn.CrossEntropyLoss(ignore_index=-100)
@@ -424,3 +424,239 @@ The model can be understood perceptually. The first and third loss are guarantee
 * Practice has proved that the universal language model can be successfully trained through distillation.
 * Use the knowledge of the teacher model to initialize the student model.
 * The use of the cosine loss function can have a better performance effect.
+
+
+## Experiment Process
+
+### 3.1 General Language Understanding
+
+* Language Comprehension and Generalization Assessment
+* DistilBERT has 40% fewer parameters than BERT and is 60% faster than BERT.
+* The results are compared to the ELMo effect on the Evaluating General Language Understanding (GLUE) benchmark (9 datasets):
+* Table 1 shows that in these 9 tasks, DistilBERT is consistently at par or better than ELMo (STS-B is 19 points more accurate).
+* Conclusion: DistilBERT retains 97% of its performance with 60% of the parameters compared to BERT.
+
+<div align=center><img src="./plots/image (15).png" width="500"></div>
+
+#### 3.1.1 Downstream tasks
+
+* Downstream task effect evaluation
+* We further investigate the performance of DistilBERT on classification tasks (IMDb sentiment classification and question answering task SQuAD).
+* As shown in Table 2, DistilBERT only lags BERT by 0.6% (40% fewer parameters) in terms of test accuracy of IMDb. On SQuAD, DistilBERT is within 3.9 points of the full BERT.
+
+<div align=center><img src="./plots/image (16).png" width="250"></div>
+
+* We also investigate whether DistilBERT on SQuAD can be fine-tuned by using the BERT model: teacher loses an extra semester (knowledge distillation). In this case, there are two consecutive distillation steps, one in the pre-training stage and one in the adaptation stage. In this case, the model performance is improved, and the loss accuracy is within 3 points compared to the benchmark (bert).
+
+* Add another step of distillation during the adaptation phase by fine-tuning DistilBERT on SQuAD using a BERT model previously fine-tuned on SQuAD as a teacher for an additional term in the loss (knowledge distillation). 
+
+* In this setting, there are thus two successive steps of distillation, one during the pre-training phase and one during the adaptation phase. 
+In this case, an interesting performances given: 79.8 F1 and 70.4 EM, within 3 points of the full model.
+
+#### 3.1.2  Size and inference speed
+
+* To further investigate the speed-up/size trade-off of DistilBERT, the author compared (in Table 3) the number of parameters of each model along with the inference time needed to do a full pass on the STS- B development set on CPU (Intel Xeon E5-2690 v3 Haswell @2.9GHz) using a batch size of 1. DistilBERT has 40% fewer parameters than BERT and is 60% faster than BERT.
+
+#### 3.1.3 On device computation
+* On device computation, We studied whether DistilBERT could be used for on-the-edge applications by building a mobile application for question answering. We compare the average inference time on a recent smartphone (iPhone 7 Plus) against our previously trained question answering model based on BERT-base. Excluding the tokenization step, DistilBERT is 71% faster than BERT, and the whole model weighs 207 MB (which could be further reduced with quantization).
+
+### 3.2 Ablation study
+
+* Investigate the influence of various components of the triple loss and the student initialization on the performances（the macro-score on GLUE）of the distilled model. 
+  Table 4 presents the deltas with the full triple loss: removing the Masked Language Modeling loss has little impact while the two distillation losses account for a large portion of the performance.
+
+<div align=center><img src="./plots/image (17).png" width="500"></div>
+
+### 3.3 Experiment Proceduer
+
+```python
+student_config_class, student_model_class = DistilBertConfig, DistilBertForMaskedLM
+teacher_config_class, teacher_model_class, teacher_tokenizer_class = \
+BertConfig, BertForMaskedLM, BertTokenizer
+ 
+# Tokenizer
+tokenizer = BertTokenizer.from_pretrained("bert-base-uncased")
+ 
+# mlm_smoothing = 0.7, Smoothing parameter to emphasize more rare tokens
+token_probs = np.maximum(counts, 1) ** -mlm_smoothing 
+for idx in special_tok_ids.values():
+    token_probs[idx] = 0.0  # do not predict special tokens
+token_probs = torch.from_numpy(token_probs)
+"""
+special_tok_ids = 
+{'unk_token': 100,
+ 'sep_token': 102,
+ 'pad_token': 0,
+ 'cls_token': 101,
+ 'mask_token': 103}
+"""
+train_lm_seq_dataset = LmSeqsDataset(params=args, data=data)
+ 
+# Student
+stu_architecture_config = DistilBertConfig.from_pretrained("distilbert-base-uncased.json")
+stu_architecture_config.output_hidden_states = True
+student = DistilBertForMaskedLM(stu_architecture_config)
+ 
+# Teacher
+teacher = BertForMaskedLM.from_pretrained("bert-base-uncase", output_hidden_states=True)
+ 
+# Train
+distiller = Distiller(
+    params=args, dataset=train_lm_seq_dataset, token_probs=token_prob, student=student, teacher=teacher)
+```
+
+
+
+#### 3.3.1 Loading the dataset
+
+The dataset we will use in this example is SST2, which contains sentences from movie reviews, each labeled as either positive (has the value 1) or negative (has the value 0): 
+
+The dataset is [available](https://github.com/clairett/pytorch-sentiment-classification/) as a file on github, so we just import it directly into a pandas dataframe.(https://github.com/clairett/pytorch-sentiment-classification/raw/master/data/SST2/train.tsv)
+
+| Sentence                                                     | Label |
+| :----------------------------------------------------------- | :---: |
+| labela stirring , funny and finally transporting re imagining of beauty and the beast and 1930s horror films |   1   |
+| apparently reassembled from the cutting room floor of any given daytime soap0they presume their audience won't sit still for a sociology lesson |   0   |
+| they presume their audience won't sit still for a sociology lesson |   0   |
+| this is a visually stunning rumination on love , memory , history and the war between art and commerce |   1   |
+| they presume their audience won't sit still for a sociology lesson |   1   |
+
+
+
+#### 3.3.2 Preprocessing the training data
+
+* Before we can feed those texts to our model, we need to preprocess them. 
+* This is done by a Transformers `Tokenizer` which will tokenize the inputs (including converting the tokens to their corresponding IDs in the pretrained vocabulary) and put it in a format the model expects, as well as generate the other inputs that model requires.
+
+```python
+# Importing pre-trained BERT model and tokenizer
+tokenizer = BertTokenizer.from_pretrained("bert-base-uncased")
+model = BertModel.from_pretrained("bert-base-uncased")
+#Tokenization
+tokenized = df[0].apply((lambda x: tokenizer.encode(x, add_special_tokens=True)))
+```
+
+* This turns every sentence into the list of ids.
+
+<div align=center><img src="./plots/image (18).png" width="500"></div>
+
+#### 3.3.3 Processing with DistilBERT
+
+* We now create an input tensor out of the padded token matrix, and send that to DistilBERT
+
+```python
+input_ids = torch.tensor(np.array(padded))
+with torch.no_grad():
+    last_hidden_states = model(input_ids)
+```
+
+* After running this step, last_hidden_states holds the outputs of DistilBERT.  
+* It is a tuple with the shape (number of examples, max number of tokens in the sequence, number of hidden units in the DistilBERT model). In our case, this will be :
+	* 2000 (since we only limited ourselves to 2000 examples), 
+	* 66 (which is the number of tokens in the longest sequence from the 2000 examples), 
+	* 768 (the number of hidden units in the DistilBERT model).
+
+<div align=center><img src="./plots/image (19).png" width="500"></div>
+
+### 3.3 Our Task on Conll03
+
+* https://paperswithcode.com/sota/named-entity-recognition-ner-on-conll-2003
+
+* Parameters
+```json
+"label2id": {
+"B-LOC": 5,
+"B-MISC": 7,
+"B-ORG": 3,
+"B-PER": 1,
+"I-LOC": 6,
+"I-MISC": 8,
+"I-ORG": 4,
+"I-PER": 2,
+"O": 0
+},
+"max_position_embeddings": 512,
+"model_type": "distilbert",
+"n_heads": 12,
+"n_layers": 6,
+"pad_token_id": 0,
+"qa_dropout": 0.1,
+"seq_classif_dropout": 0.2,
+"sinusoidal_pos_embds": false,
+"tie_weights_": true,
+"transformers_version": "4.3.1",
+"vocab_size": 30522
+}
+```
+
+
+
+* Result Metrics
+	
+```python
+eval_loss = 0.5052699446678162
+
+eval_LOC_precision = 0.9601215343714394
+eval_LOC_recall = 0.9656226126814362
+eval_LOC_f1 = 0.962864216339745
+eval_LOC_number = 2618
+
+eval_MISC_precision = 0.848582995951417
+eval_MISC_recall = 0.851340373679935
+eval_MISC_f1 = 0.8499594484995945
+eval_MISC_number = 1231
+
+eval_ORG_precision = 0.8968140751307656
+eval_ORG_recall = 0.9173151750972762
+eval_ORG_f1 = 0.9069487857658092
+eval_ORG_number = 2056
+
+eval_PER_precision = 0.9727242852448242
+eval_PER_recall = 0.975609756097561
+eval_PER_f1 = 0.9741648839888103
+eval_PER_number = 3034
+
+eval_precision = 0.913160
+eval_recall = 0.917552
+eval_f1 = 0.915351
+eval_accuracy =  0.9838276645431872
+
+epoch = 3.0
+```
+
+* Comparing with other model
+
+<div align=center><img src="./plots/image (20).png" width="300"></div>
+
+
+## 4. Further Work
+### 4.1 Other Distilled Model
+#### 4.1.1 TinyBERT
+
+<div align=center><img src="./plots/image (21).png" width="500"></div>
+
+* TinyBERT proposed a two-stage learning framework. 
+* The teacher model was distilled in the pre-training and fine-tuning stages. 
+* A 4-layer BERT with a 7.5 times reduction in parameters and a speed increase of 9.4 times was obtained. 
+* The effect can reach 96.8% of the teacher model. 
+
+#### 4.1.2 MobileBERT
+
+<div align=center><img src="./plots/image (22).png" width="500"></div>
+
+* The models introduced in the previous article are all hierarchical pruning + distillation operations. 
+* MobileBERT is committed to reducing the dimensionality of each layer, reducing the dimensionality of each layer, and reducing the parameters by 4.3 times while retaining 24 layers.
+
+### 4.2 Different Method of Distillation
+
+Three different distillation strategies: 
+*  direct distillation of all layers, 
+*  the first distillation of the middle layer and then the last layer, 
+*  layer-by-layer distillation.
+
+<div align=center><img src="./plots/image (23).png" width="500"></div>
+
+The final conclusion is that the layer-by-layer distillation has the best effect, but the difference is only 0.5 points.
+
+### 4.3 Data Augmentation
+
