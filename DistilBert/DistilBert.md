@@ -100,17 +100,19 @@ Model compression can be roughly divided into 5 types:
 	* Neuron pruning
 * **Knowledge Distillation** 
   * Provide a small netwrok without too much loss on accuracy comparing with original network
+
 * **Parameter Quantization** 
   * Using less bits to represent a value 
   * Weight clustering
-<div align=center><img src="./plots/image (3).png" width="400"></div>
   * Represent frequent clusters by less bits, represent rare clusters by more bits	
+<div align=center><img src="./plots/image (3).png" width="400"></div>
 
-* * **Parameter matrix approximation**
-	* The purpose of reducing matrix parameters is achieved by low-rank decomposition of the matrix or other methods* 
+
+* **Parameter matrix approximation**
+	* The purpose of reducing matrix parameters is achieved by low-rank decomposition of the matrix or other methods
 <div align=center><img src="./plots/image (4).png" width="400"></div>
 
-* * **Weight sharing**
+* **Weight sharing**
 	* By sharing parameters, the network parameters can be reduced,
 	* For example, Albert shares the transformer layer;
 
@@ -426,6 +428,16 @@ The model can be understood perceptually. The first and third loss are guarantee
 * The use of the cosine loss function can have a better performance effect.
 
 
+
+
+
+***
+
+
+
+
+
+
 ## Experiment Process
 
 ### 3.1 General Language Understanding
@@ -627,6 +639,10 @@ epoch = 3.0
 * Comparing with other model
 
 <div align=center><img src="./plots/image (20).png" width="300"></div>
+
+
+***
+
 
 
 ## 4. Further Work
