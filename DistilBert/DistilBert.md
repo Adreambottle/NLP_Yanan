@@ -194,11 +194,233 @@ e.g. `"I loved the comedy"`  => `"I [MASK] the comedy`
 
 
 
+* Developed by *Victor SANH, Lysandre DEBUT, Julien CHAUMOND, Thomas WOLF,* from HuggingFace, [**DistilBERT, a distilled version of BERT: smaller, faster, cheaper and lighter**](https://arxiv.org/pdf/1910.01108.pdf). 
+* Due to the large size of BERT, it is difficult for it to put it into production. Suppose we want to use these models on mobile phones, so we require a less weight yet efficient model, that’s when DistilBERT comes into the picture. 
+* Distil-BERT has 97% of BERT’s performance while being trained on half of the parameters of BERT. 
 
 
+### 2.1 Model Structure
+#### 2.1.1 MLM mechanism of DistilBert 
+##### 2.1.1.1 Static mask
+
+* When inputting, randomly cover or replace any word or word in a sentence, and then let the model predict which part is covered or replaced through contextual understanding, and then only calculate the tokens of the covered part when doing prediction.
+
+* Randomly replace 15% of the tokens in a sentence with the following:
+	* These tokens have an 80% chance of being replaced with [Mask];
+	* There is a 10% chance of being replaced by any other;
+	* There is a 10% chance of being left intact.
+
+```python
+# REAL_TOKENS: The real tokens 
+_token_ids_real = token_ids[pred_mask]
+# RANDOM_TOKENS: select n_tgt ids from vocab_size
+_token_ids_rand = _token_ids_real.clone().random_(self.vocab_size)
+# MASK_TOKENS: n_tgt number of mask id as [MASK]
+_token_ids_mask = _token_ids_real.clone().fill_(
+    self.params.special_tok_ids["mask_token"])
+
+# pred_probs = torch.FloatTensor([0.8, 0.1, 0.1])
+# Random select with the prob as pred_probs
+probs = torch.multinomial(self.pred_probs, len(_token_ids_real), replacement=True)
+
+# process the MASK Tokens with the prob of 80%，10%，10% 
+# The final prob is: mask 15%*80%，real 15%*10%，random 15%*10%
+_token_ids = (
+    _token_ids_mask * (probs == 0).long()
+    + _token_ids_real * (probs == 1).long()
+    + _token_ids_rand * (probs == 2).long()
+)
+# using _token_ids take the place of original token ids
+# (batch_size, seq_length)
+token_ids = token_ids.masked_scatter(pred_mask, _token_ids)
+```
+
+##### 2.1.1.2 More attention to low-frequency words
+
+Token_probs is used in the mask to make the selection of mask pay more attention to low-frequency words, so as to achieve smooth sampling of the mask (if sampling is evenly distributed, most of the masks obtained may be repeated high-frequency words).
+
+```python
+bs, max_seq_len = token_ids.size()
+# copy token_ids
+mlm_labels = token_ids.new(token_ids.size()).copy_(token_ids)
+
+# The prob of each tokens 
+x_prob = self.token_probs[token_ids.flatten()]
+
+# mlm_mask_prop = 0.15, the prob of mask words is 15%
+n_tgt = math.ceil(self.mlm_mask_prop * lengths.sum().item())
+
+# Sample n_tgt words，with the prob of each token as x_prob, without replacement, return the ids of samples
+tgt_ids = torch.multinomial(x_prob / x_prob.sum(), n_tgt, replacement=False)
+```
+
+#### 2.1.2 DistilBert Model Stcture
+
+* On the basis of the 12-layer Transformer-encoder, one layer is removed from every two layers, and finally, the 12 layers are reduced to 6 layers.
+* Removed the token type embedding and pooler.
+* Use the soft target of the teacher model and the hidden layer parameters of the teacher model to train the student model.
+
+<div align=center><img src="./plots/image (12).png" width="500"></div>
 
 
+##### 2.1.2.1 Total Model of the DistilBertModel
+```
+(distilbert): DistilBertModel(
+  
+  (embeddings): Embeddings(
+    (word_embeddings): Embedding(30522, 768, padding_idx=0)
+    (position_embeddings): Embedding(512, 768)
+    (LayerNorm): LayerNorm((768,)
+    (dropout): Dropout(p=0.1, inplace=False)
+  )
 
+  (transformer): Transformer(
+    (layer): ModuleList(
+      (0): TransformerBlock(
+        (attention): MultiHeadSelfAttention()
+        (sa_layer_norm): LayerNorm((768,)
+        (ffn): FFN( (dropout) (lin1) (lin2) )
+        (output_layer_norm): LayerNorm((768,)
+      )
+      (1): TransformerBlock()
+      (2): TransformerBlock()
+      (3): TransformerBlock()
+      (4): TransformerBlock()
+      (5): TransformerBlock()     
+    )
+  )
+)
+```
 
+##### 2.1.2.2 Detail Model Part of the Transformer part
 
+```
+(transformer): Transformer(
+  (layer): ModuleList(
+    (0): TransformerBlock(
+      (attention): MultiHeadSelfAttention(
+        (dropout): Dropout(p=0.1, inplace=False)
+        (q_lin): Linear(in=768, out=768, bias=True)
+        (k_lin): Linear(in=768, out=768, bias=True)
+        (v_lin): Linear(in=768, out=768, bias=True)
+        (out_lin): Linear(in=768, out=768, bias=True)
+      )
+      (sa_layer_norm): LayerNorm((768,)
+      (ffn): FFN(
+        (dropout): Dropout(p=0.1, inplace=False)
+        (lin1): Linear(in=768, out=3072, bias=True)
+        (lin2): Linear(in=3072, out=768, bias=True)
+      )
+      (output_layer_norm): LayerNorm((768,)
+    )
+        """  Repeat TransformerBlock 6 times   """
+  )
+)
+```
 
+### 2.2 Distiller
+
+#### 2.2.1 Adjustment of the activate function
+##### 2.2.1.1 Traditional softmax
+
+* The neural network uses the softmax layer to convert logits to probabilities. The original softmax function:
+
+$$ p_i = \frac{exp(z_i)}{\sum_{j}exp(z_j) } $$
+
+<div align=center><img src="./plots/image (13).png" width="300"></div>
+
+* But directly using the output value of the softmax layer as the soft target, this will bring another problem:
+
+* When the entropy of the probability distribution output by softmax is relatively small, the value of the negative label is very close to 0, and the contribution to the loss function is very small, so small that it can be ignored. So the variable "temperature" comes in handy.
+
+##### 2.2.1.2 Softmax-Temperature:
+
+* The following formula is the softmax function after adding the temperature variable:
+
+$$p_i = \frac{exp(z_i/T)}{\sum_{j}exp(z_j/T) } $$
+
+<div align=center><img src="./plots/image (14).png" width="300"></div>
+
+* Where qi is the probability of each category output, zi is the logits output of each category, and T is the temperature. When the temperature T = 1, this is the standard Softmax formula. 
+
+* The higher the T, the smoother the output probability distribution of softmax, and the larger the entropy of the distribution, the information carried by the negative label will be relatively amplified, and the model training will pay more attention to the negative label.
+
+#### 2.2.2 Loss 
+
+The final loss function is a linear combination of Lce and masked language modeling loss Lmlm. In addition, the author found that adding cosine embedding loss (Lcos) is beneficial to make the direction of the hidden state vector of students and teachers consistent.
+
+* Lce：The loss of the logits of the teacher model and the student model. Using T as the temperature adjustment in the softmax. Using Kullback-Leibler divergence as the loss function $ L_{ce} = \sum_{i}t_i * log(s_i) \quad $ 
+	* t_i and s_i means the logits of the teacher model and student model
+* Lmlm：the loss of the BERT-MLM task. Using cross-entropy loss function
+* Lcos：the loss of the output vector of the teacher's model and the student model. Using cosine loss.
+
+##### 2.2.2.1 Loss_ce
+
+```python
+# logits hidden_states(student&teacher) (batch_size, seq_lenth, vocab_size)
+s_logits, s_hidden_states = student(input_ids=input_ids, attention_mask=attention_mask)
+t_logits, t_hidden_states = teacher(input_ids=input_ids, attention_mask=attention_mask)
+
+# choose masked logits (n_tgt, vocab_size)
+s_logits_slct = torch.masked_select(s_logits, mask)
+s_logits_slct = s_logits_slct.view(-1, s_logits.size(-1))
+t_logits_slct = torch.masked_select(t_logits, mask)
+t_logits_slct = t_logits_slct.view(-1, s_logits.size(-1))
+
+# temperature = 2.0，
+# ce_loss_fct = nn.KLDivLoss(reduction="batchmean")
+# define the loss fucntion as the KL diversity loss
+loss_ce = self.ce_loss_fct(
+    F.log_softmax(s_logits_slct / self.temperature, dim=-1),
+    F.softmax(t_logits_slct / self.temperature, dim=-1)) * (self.temperature) ** 2
+```
+    
+##### 2.2.2.2 Loss_mlm
+```python
+# lm_loss_fct = nn.CrossEntropyLoss(ignore_index=-100)
+# (batch_size*seq_length, vocab_size), (batch_size*seq_length, )
+loss_mlm = self.lm_loss_fct(s_logits.view(-1, s_logits.size(-1)), lm_labels.view(-1))
+```
+
+#### 2.2.2.3 Loss_cos
+```python
+# hidden_state of the last layer, (batch_size, seq_length, dim)
+s_hidden_states = s_hidden_states[-1]  
+t_hidden_states = t_hidden_states[-1]
+
+# attention_mask: (batch_size, seq_length), mask: (batch_size, seq_length, dim)
+mask = attention_mask.unsqueeze(-1).expand_as(s_hidden_states)
+dim = s_hidden_states.size(-1)
+
+# (sum(lengths), dim) Change the shape of the data into 2 dimensions
+s_hidden_states_slct = torch.masked_select(s_hidden_states, mask)
+s_hidden_states_slct = s_hidden_states_slct.view(-1, dim)
+t_hidden_states_slct = torch.masked_select(t_hidden_states, mask)
+t_hidden_states_slct = t_hidden_states_slct.view(-1, dim)       
+
+target = s_hidden_states_slct.new(s_hidden_states_slct.size(0)).fill_(1)
+
+# cosine_loss_fct = nn.CosineEmbeddingLoss(reduction="mean")
+loss_cos = self.cosine_loss_fct(s_hidden_states_slct, t_hidden_states_slct, target)
+```
+#### 2.2.2.3 Total_Loss
+
+```python
+# alpha_ce = 5.0
+# alpha_mlm = 2.0 
+# alpha_cos = 1.0 
+# alpha_clm = 0.0
+# alpha_mse = 0.0
+
+loss = alpha_ce * loss_ce +
+       alpha_mlm * loss_mlm +
+       alpha_cos * loss_cos
+```
+
+### 2.3 Conclusion
+
+The model can be understood perceptually. The first and third loss are guaranteed to be the same as the teacher model, and the second loss is the guarantee of self (Bert), which is very explanatory.
+
+* Practice has proved that the universal language model can be successfully trained through distillation.
+* Use the knowledge of the teacher model to initialize the student model.
+* The use of the cosine loss function can have a better performance effect.
