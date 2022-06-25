@@ -16,7 +16,7 @@ BERT (Bidirectional Encoder Representations from Transformers)
 
 #### 1.1.2. Architecture
 
-<img src="./plots/image (1).png" alt="image (1)" style="zoom:30%;" />
+<img src="./plots/image (1).png" alt="image (1)" width="300">
 
 * BERT’s model architecture is a multi-layer bidirectional Transformer encoder
 * Layer number (Transformer blocks): `L` (Base 12, Large 24)
@@ -129,7 +129,7 @@ Model compression can be roughly divided into 5 types:
 
 * Distilling Task-Specific Knowledge from BERT into Simple Neural Networks: https://arxiv.org/abs/1903.12136
 
-<img src="./plots/image (5).png" alt="image (5)" style="zoom:40%;" />
+<img src="./plots/image (5).png" width="500">
 
 * The author proposed to distill knowledge from BERT into a single-layer BiLSTM. Across multiple datasets in paraphrasing, natural language inference, and sentiment classification, model achieve comparable results with ELMo, while using roughly 100 times fewer parameters and 15 times less inference time.
 
@@ -139,15 +139,46 @@ Model compression can be roughly divided into 5 types:
 
 The author proposed a novel, rule-based textual data augmentation approach for constructing the knowledge transfer set.
 
-* **Masking.**
-	With probability $p_{mask} $ , they randomly replace a word with `[MASK]`
-	e.g. `"I loved the comedy"`  => `"I [MASK] the comedy`
-
-* **POS-guided word replacement.**
-  With probability $p_{cos}$, they replace a word with another of the same `POS` tag.
+* **Masking.**  
+	
+	With probability $p_{mask} $ , they randomly replace a word with `[MASK]`  
+e.g. `"I loved the comedy"`  => `"I [MASK] the comedy`
+	
+* **POS-guided word replacement.**  
+  With probability $p_{cos}$, they replace a word with another of the same `POS` tag.  
   e.g. `"What do pigs eat?"` => `"How do pigs eat?"`
 
-* **n-gram sampling.**
+* **n-gram sampling.**  
   With probability $ P_{ng} $, they randomly sample an n-gram from the example, where n is randomly selected from {1, 2, . . . , 5}. Then mask them together.
 
-* Fix  $p_{mask} = p_{pos} = 0.1$ and $P_{ng} = 0.25$ across all datasets.
+* Fix  $P_{mask} = P_{pos} = 0.1$ and $P_{ng} = 0.25$ across all datasets.
+
+
+
+#### 1.3.2 BERT-PKD 
+
+* Patient Knowledge Distillation for BERT Model Compression: https://arxiv.org/abs/1908.09355
+
+  <img src="./plots/image (6).png" width="500">
+
+* Loss:
+
+<img src="./plots/image (7).png" width="200">
+<img src="./plots/image (8).png" width="200">
+<img src="./plots/image (9).png" width="200">
+
+* The additional training loss introduced by the patient teacher is defined as the mean-square loss between the normalized hidden states:
+
+<img src="./plots/image (10).png" width="200">
+
+* Different from previous studies, BERT-PKD proposes Patient Knowledge Distillation, which extracts knowledge from the middle layer of the teacher model to avoid the phenomenon of overfitting when distilling the last layer.
+
+* One hypothesis is that overfitting during knowledge distillation may lead to poor generalization. To mitigate this issue, instead of forcing the student to learn only from the logits of the last layer, authors propose a "patient" teacher-student mechanism to distill knowledge from the teacher's inter-mediate layers as well.
+
+* For the distillation of the intermediate layer, the author uses the normalized MSE, called PT loss.
+
+* The teacher model adopts a fine-tuned `BERT-base`, and the student model has a 6-layer and a 3-layer.
+
+* In order to initialize a better student model, the author proposes two strategies, 
+	* One is PKD-skip, which uses the `[2, 4, 6, 8, 10]` layers of `BERT-base`, 
+	* The other is PKD-last , using layers `[7, 8, 9, 10, 11]` layers of `BERT-base` (slightly better (<0.01).). 
