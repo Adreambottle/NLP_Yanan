@@ -131,7 +131,7 @@ Model compression can be roughly divided into 5 types:
 
 * Distilling Task-Specific Knowledge from BERT into Simple Neural Networks: https://arxiv.org/abs/1903.12136
 
-<div align=center><img src="./plots/image (5).png" width="500"></div>
+<div align=center><img src="./plots/image (5).png" width="600"></div>
 
 
 * The author proposed to distill knowledge from BERT into a single-layer BiLSTM. Across multiple datasets in paraphrasing, natural language inference, and sentiment classification, model achieve comparable results with ELMo, while using roughly 100 times fewer parameters and 15 times less inference time.
@@ -538,7 +538,7 @@ tokenized = df[0].apply((lambda x: tokenizer.encode(x, add_special_tokens=True))
 
 * This turns every sentence into the list of ids.
 
-<div align=center><img src="./plots/image (18).png" width="500"></div>
+<div align=center><img src="./plots/image (18).png" width="700"></div>
 
 #### 3.3.3 Processing with DistilBERT
 
@@ -556,7 +556,7 @@ with torch.no_grad():
 	* 66 (which is the number of tokens in the longest sequence from the 2000 examples), 
 	* 768 (the number of hidden units in the DistilBERT model).
 
-<div align=center><img src="./plots/image (19).png" width="500"></div>
+<div align=center><img src="./plots/image (19).png" width="700"></div>
 
 ### 3.3 Our Task on Conll03
 
@@ -642,7 +642,7 @@ epoch = 3.0
 
 #### 4.1.2 MobileBERT
 
-<div align=center><img src="./plots/image (22).png" width="500"></div>
+<div align=center><img src="./plots/image (22).png" width="700"></div>
 
 * The models introduced in the previous article are all hierarchical pruning + distillation operations. 
 * MobileBERT is committed to reducing the dimensionality of each layer, reducing the dimensionality of each layer, and reducing the parameters by 4.3 times while retaining 24 layers.
@@ -654,9 +654,71 @@ Three different distillation strategies:
 *  the first distillation of the middle layer and then the last layer, 
 *  layer-by-layer distillation.
 
-<div align=center><img src="./plots/image (23).png" width="500"></div>
+<div align=center><img src="./plots/image (23).png" width="700"></div>
 
 The final conclusion is that the layer-by-layer distillation has the best effect, but the difference is only 0.5 points.
 
 ### 4.3 Data Augmentation
+
+Some data augmentation techniques:
+
+#### 4.3.1 Word Replacement
+
+* Data Augmentation using Thesaurus: we randomly pick words and phrases from sentence and replace them with their synonyms.
+
+* Using embeddings：we take the pre-trained embeddings, like Word2Vec, GloVe, FastText, Sent2Vec, to use adjacent embedding to replace word. TinyBert used this technique to improve their language model performance in downstream tasks.
+
+* Generate by Masked Language Model: eg. BERT/RoBerta, use pre-trained model to generate masked sentence and do prediction.
+
+* Using TF-IDF:  replace the word that have relatively low TF-IDF, which will not influence the ground-truth
+
+#### 4.3.2 Back Translation
+
+* Translate to another language and translate back. Using TextBlob or Google Sheets.\
+
+#### 4.3.3 Text pattern transformation
+
+* Do contraction or expansion:
+
+<div align=center><img src="./plots/image (24).png" width="400"></div>
+
+* Resolve ambiguity: allow blur contraction but blur expansion
+
+<div align=center><img src="./plots/image (26).png" width="400"></div>
+
+#### 4.3.4 Add some noise: emhance the robustness of model
+* Typo (Randomly)
+* Typo (QWERTY Keyboard error)
+* Unigram noise: The idea is to replace with words sampled from a single-character frequency distribution. This frequency is basically the number of times each word appears in the training corpus.
+* Blank noising: The idea is to replace some random words with placeholder tokens. This article uses "_" as a placeholder tag. In the paper, they use it as a way to avoid context-specific overfitting, as well as a smoothing mechanism for language models. This technology helps improve perplexity and BLEU scores.
+* Disorder the sentence
+* Cross-over
+
+#### 4.3.5 Voice Change
+
+<div align=center><img src="./plots/image (27).png" width="400"></div>
+
+### 4.4 Tricks of Distillation
+
+We should consider that what do we need to do distillation.
+
+#### 4.4.1 Reduce Layer or Dimension?
+
+* It denpends on pre-training distillation or finer-tune distillation. 
+* For pre-trained model distillation, we can refer to MiniLM, MobileBERT or TinyBERT to reduce the layer and dimension. If we want to distill the middle layer without using bottleneck like MobileBERT to re-train a teacher model, we can refer to TinyBERT to do linear transformation on hidden layer loss to expand dimensionality of student model.
+
+#### 4.4.1 Which Loss
+
+* We compared the loss functions used by multiple distillation models. Basically, each model uses a different loss function for distillation. 
+* There are multiple combinations of `CE`, `KL`, `MSE`, `Cos`, etc.
+* Combing the loss functions used by each distillation model to get the following table:
+
+<div align=center><img src="./plots/image (28).png" width="600"></div>
+
+* For hard labels, using `KL` and `CE` is the same, because $KL(p||q)=H(p||q)-H(p)$, the label distribution is certain when the training set is unchanged. But it is different for soft labels, but many models in the table still use `CE`, only Distilled BiLSTM finds that $MSE(Z^t, Z^s)$ is better. Personally, I think you can try `CE`/`MSE`/`KL`, but `MSE` has the advantage of avoiding the tuning of T parameters.
+
+* For the distillation of the intermediate layer output, most models use `MSE`, and only DistillBERT adds cosine loss to align the direction.
+
+* The distillation loss of the attention matrix is relatively uniform. If you want to distill the attention logits before softmax, you can use `MSE`, and the attention prob after that can use `KL` divergence.
+
 
