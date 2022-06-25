@@ -44,4 +44,8 @@ Models here are encapsulated into the same form can be called by the main proces
 * `NNmodel.py`  => PyTorch models for `NeuralNetwork.py`
 
 ## Files
-*
+
+* `requirements.txt` => Libraries and Environment. You can use `pip install -r requirements`
+* `Cohorts_rev.csv` => Original Data
+* `data_use.csv` => Cleaned Data, using for reload data
+* `decompose_dict.json` => Time Series Decomposition Data, using for transfer data
