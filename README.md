@@ -39,4 +39,12 @@
 
   * Realize a time series forecast using some Time Series and NLP methods.
 
-  
+  - one for advanced methods: **LSTM, Neural Networks(based on PyTorch), Prophet, ARIMA**
+  - one for sklearn libraries for **["knn", "random forest", "adaboost", "gbrt", "support vector regression", "lasso", "decision tree", "linear", "ridge", "elastic-net"]**
+
+* `HornorOfKings`
+  * Perform statistics and analysis for th mobile game Honor of Kings,
+  * Train a neural network model to extract game events from raw data. 
+  * Use time-series algorithms to predict future player intent and game events.
+  * Build an intelligent commentary algorithm by NLG, match automatic commentary for game anchors.
+
