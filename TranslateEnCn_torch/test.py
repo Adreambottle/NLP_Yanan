@@ -27,6 +27,17 @@ SAVE_FILE = 'save/model.pt'           # 模型保存路径(注意如当前目录
 DEVICE = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
 
+
+
+# 数据预处理
+data = PrepareData(TRAIN_FILE, DEV_FILE)
+src_vocab = len(data.en_word_dict)
+tgt_vocab = len(data.cn_word_dict)
+print("src_vocab %d" % src_vocab)
+print("tgt_vocab %d" % tgt_vocab)
+
+
+
 src_vocab
 tgt_vocab
 N = 6

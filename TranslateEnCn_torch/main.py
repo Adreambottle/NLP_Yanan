@@ -33,14 +33,14 @@ BATCH_SIZE = 64   # Batch size, data number in a data
 EPOCHS = 20       # Epochs
 LAYERS = 6        # encoder and decoder blocks number in the transformer
 H_NUM = 8         # multihead attention hidden个数
-D_MODEL = 256     # embedding dimentions
+D_MODEL = 256     # embedding dimensions
 D_FF = 1024       # feed forward dimensions
 DROPOUT = 0.1     # dropout rate
 MAX_LENGTH = 60   # The max length of a sentence
 
 TRAIN_FILE = 'corpus/train.json'    # Train data
 DEV_FILE = "corpus/dev.json"        # Develop / Evaluate data
-SAVE_FILE = 'save/model.pt'           # 模型保存路径(注意如当前目录无save文件夹需要自己创建)
+SAVE_FILE = 'save/model.pt'         # model saving path
 DEVICE = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
 
@@ -70,15 +70,11 @@ def seq_padding(X, padding=0):
 
 
 class PrepareData:
-    def __init__(self, train_path):
-        self.train_path = train_path
-        pass
-
-    def run(self):
+    def __init__(self, train_path, dev_path):
 
         # Load the data and split into word tokens
-        self.train_en, self.train_cn = self.load_data(self.train_path)
-        self.dev_en, self.dev_cn = self.load_data(dev_file)
+        self.train_en, self.train_cn = self.load_data(train_path)
+        self.dev_en, self.dev_cn = self.load_data(dev_path)
 
         # Build the vocabulary
         self.en_word_dict, self.en_total_words, self.en_index_dict = self.build_dict(self.train_en)
@@ -93,7 +89,7 @@ class PrepareData:
         self.dev_data = self.splitBatch(self.dev_en, self.dev_cn, BATCH_SIZE)
 
 
-    def load_data(self, train_path):
+    def load_data(self, path):
         """
         read the bilinguistic corpus in English and Chinese
         use nltk word_tokenize to change corpus into word tokens
@@ -106,9 +102,8 @@ class PrepareData:
         en = []
         cn = []
         
-        # self.train_path = "./corpus/translation2019zh_valid_39323.json"
-        self.train_path = train_path
-        json_list = json.load(open(train_path))
+
+        json_list = json.load(open(path))
         for list_content in json_list:
             en.append(['BOS'] + word_tokenize(list_content["english"]) + ['EOS'])
             cn.append(['BOS'] + [ch for ch in list_content["chinese"]] + ['EOS'])
@@ -213,6 +208,80 @@ class PrepareData:
             batches.append(Batch(batch_en, batch_cn))
 
         return batches
+
+
+class Batch:
+    "Object for holding a batch of data with mask during training."
+
+    def __init__(self, src, trg=None, pad=0):
+        # Change numpy array into torch.Tensor using long int
+        src = torch.from_numpy(src).to(DEVICE).long()  # src: source English
+        trg = torch.from_numpy(trg).to(DEVICE).long()  # trg: target Chinese
+        self.src = src
+
+        # Get the masked boolean matrix
+        # Add one -2 dimension unsqueeze(-2), shape in (N, 1, L)
+        self.src_mask = (src != pad).unsqueeze(-2)
+
+        # If there is the target data, add mask to the target data in decoder
+        if trg is not None:
+            # Because we use the seq to seq model, we have to practice the token one by one
+            # decoder using the left without the last one as the input
+            self.trg = trg[:, :-1]
+
+            # the real token is the last one of the target data when training the decoder
+            self.trg_y = trg[:, 1:]
+
+            # using the input part to create the attention mask
+            self.trg_mask = self.make_std_mask(self.trg, pad)
+
+            # statistic the real token numbers in the output target value
+            self.ntokens = (self.trg_y != pad).data.sum()
+
+    # Mask mechanism
+    @staticmethod
+    def make_std_mask(tgt, pad):
+        """
+        Create a mask to hide padding and future words.
+        tgt.shape -> (N, L)
+        """
+
+        # tgt = torch.randint(5, (4, 10))
+
+        # If element is not equal to padding value, the mask value is true
+        # Then add a new dimension at -2, to spreed the -1 dimension (N, L) -> (N, 1, L)
+        tgt_mask = (tgt != pad).unsqueeze(-2)
+
+        # subsequent_mask function to generate a mask square with the last dimension L
+        mask_square = subsequent_mask(tgt.size(-1))
+        mask_square = Variable(mask_square.type_as(tgt_mask.data))
+
+        # Spread the new -2 dimension from 1 to L, with the value as both tgt_mask and mask_square
+        # tgt_mask.shape    -> (N, 1, L)
+        # mask_square.shape -> (1, L, L)
+        # attn_mask.shape   -> (N, L, L)
+        attn_mask = tgt_mask & mask_square
+
+        return attn_mask
+
+
+def subsequent_mask(size):
+    """
+    [[0, 1, 1, 1],        [[ True, False, False, False],
+     [0, 0, 1, 1],         [ True,  True, False, False],
+     [0, 0, 0, 1],         [ True,  True,  True, False],
+     [0, 0, 0, 0]]         [ True,  True,  True,  True]]
+    """
+    # Set the mask square size
+    attn_shape = (1, size, size)
+
+    # Generate a triangle matrix with top right 1 (without eye) and left bottom 0
+    subsequent_mask = np.triu(np.ones(attn_shape), k=1).astype('uint8')
+
+    # Generate a triangle matrix with top right False (without eye) and left bottom True
+    subsequent_mask = torch.from_numpy(subsequent_mask) == 0
+    return subsequent_mask
+
 
 
 class Embeddings(nn.Module):
@@ -421,78 +490,6 @@ class MultiHeadedAttention(nn.Module):
 
 
 
-class Batch:
-    "Object for holding a batch of data with mask during training."
-    def __init__(self, src, trg=None, pad=0):
-        
-        # Change numpy array into torch.Tensor using long int
-        src = torch.from_numpy(src).to(DEVICE).long()     # src: source English
-        trg = torch.from_numpy(trg).to(DEVICE).long()     # trg: target Chinese
-        self.src = src
-        
-        # Get the masked boolean matrix
-        # Add one -2 dimension unsqueeze(-2), shape in (N, 1, L)
-        self.src_mask = (src != pad).unsqueeze(-2)
-
-        # If there is the target data, add mask to the target data in decoder
-        if trg is not None:
-
-            # Because we use the seq to seq model, we have to practice the token one by one
-            # decoder using the left without the last one as the input
-            self.trg = trg[:, :-1]
-
-            # the real token is the last one of the target data when training the decoder
-            self.trg_y = trg[:, 1:]
-
-            # using the input part to create the attention mask
-            self.trg_mask = self.make_std_mask(self.trg, pad)
-
-            # statistic the real token numbers in the output target value
-            self.ntokens = (self.trg_y != pad).data.sum()
-    
-    # Mask mechanism
-    @staticmethod
-    def make_std_mask(tgt, pad):
-        """
-        Create a mask to hide padding and future words.
-        tgt.shape -> (N, L)
-        """
-
-        # tgt = torch.randint(5, (4, 10))
-
-        # If element is not equal to padding value, the mask value is true
-        # Then add a new dimension at -2, to spreed the -1 dimension (N, L) -> (N, 1, L)
-        tgt_mask = (tgt != pad).unsqueeze(-2)
-
-        # subsequent_mask function to generate a mask square with the last dimension L
-        mask_square = subsequent_mask(tgt.size(-1))
-        mask_square = Variable(mask_square.type_as(tgt_mask.data))
-
-        # Spread the new -2 dimension from 1 to L, with the value as both tgt_mask and mask_square
-        # tgt_mask.shape    -> (N, 1, L)
-        # mask_square.shape -> (1, L, L)
-        # attn_mask.shape   -> (N, L, L)
-        attn_mask = tgt_mask & mask_square
-
-        return attn_mask
-
-
-def subsequent_mask(size):
-    """
-    [[0, 1, 1, 1],        [[ True, False, False, False],
-     [0, 0, 1, 1],         [ True,  True, False, False],
-     [0, 0, 0, 1],         [ True,  True,  True, False],
-     [0, 0, 0, 0]]         [ True,  True,  True,  True]]
-    """
-    # Set the mask square size
-    attn_shape = (1, size, size)
-
-    # Generate a triangle matrix with top right 1 (without eye) and left bottom 0
-    subsequent_mask = np.triu(np.ones(attn_shape), k=1).astype('uint8')
-
-    # Generate a triangle matrix with top right False (without eye) and left bottom True
-    subsequent_mask = torch.from_numpy(subsequent_mask) == 0
-    return subsequent_mask
 
 
 class LayerNorm(nn.Module):
@@ -508,16 +505,18 @@ class LayerNorm(nn.Module):
         # initialization with α = 1, β = 0
         self.a_2 = nn.Parameter(torch.ones(size))
         self.b_2 = nn.Parameter(torch.zeros(size))
+
         # smooth item eps, set is 1e-6
         self.eps = eps
 
     def forward(self, x):
         # Calculate the mean and the standard error using for layer norm
-        mean = x.mean(-1, keepdim = True)
-        std = x.std(-1, keepdim = True)
+        mean = x.mean(-1, keepdim=True)
+        std = x.std(-1, keepdim=True)
         
         # Weight * (x - E(x)) / sqrt(var(x) + epsilon) + Bias
-        return  self.a_2 * ( x - mean) / torch.sqrt(std ** 2 + self.eps) + self.b_2 
+        output = self.a_2 * (x - mean) / torch.sqrt(std ** 2 + self.eps) + self.b_2
+        return output
 
 
 
@@ -538,7 +537,7 @@ class AddAndNormLayer(nn.Module):
         self.functionlayer = functionlayer
 
         # functionlayer = self_attn
-
+        # functionlayer = feed_forward
 
 
     def forward(self, org_x, *args):
@@ -546,9 +545,6 @@ class AddAndNormLayer(nn.Module):
         # Return the addition of original data and the function layer data
         org_x = self.norm(org_x)
         residual = self.functionlayer(*args)
-        # attention(ta, ta, ta, mask, dropout)
-        # ff = PositionwiseFeedForward(d_model, d_ff, dropout)
-
         residual = self.dropout(residual)
         output = org_x + residual
         
@@ -609,16 +605,6 @@ class Encoder(nn.Module):
             x = layer(x, mask)
         return self.norm(x)
 
-# d_model = 96
-# attn = MultiHeadedAttention(h, d_model).to(DEVICE)
-# ff = PositionwiseFeedForward(d_model, d_ff, dropout).to(DEVICE)
-# Encoder(
-#     EncoderLayer(
-#         d_model,
-#         c(attn),
-#         c(ff),
-#         dropout
-#     ).to(DEVICE), N).to(DEVICE),
 
 
 class EncoderLayer(nn.Module):
@@ -711,10 +697,8 @@ class DecoderLayer(nn.Module):
         self.feed_forward = feed_forward
 
         # 3 add and norm layers
-
         # Add_Norm_Layer(X + MMHA)
         self.add_norm_1 = AddAndNormLayer(size, dropout, self.self_attn)
-
         self.add_norm_2 = AddAndNormLayer(size, dropout, self.src_attn)
         self.add_norm_3 = AddAndNormLayer(size, dropout, self.feed_forward)
 
@@ -723,15 +707,14 @@ class DecoderLayer(nn.Module):
         # m used for storing the hidden outcome for Q and K from encoder
         m = memory
 
-        # TODO: 参照EncoderLayer完成DecoderLayer的forwark函数
-        # Self-Attention：注意self-attention的q，k和v均为decoder hidden
-        # x = self.functional_layer[0](x, lambda x: self.self_attn(x, x, x, tgt_mask))
+        # TODO: Follow the encoder layer finish the decoder layer
+        # The first attention is self attention
+        # The second attention is masked self attention
 
         x = self.add_norm_1(x, x, x, x, tgt_mask)
         x = self.add_norm_2(x, x, m, m, src_mask)
         x = self.add_norm_3(x, x)
-        # Context-Attention：注意context-attention的q为decoder hidden，而k和v为encoder hidden
-        #x = self.functional_layer[1](x, lambda x: self.src_attn(x, m, m, src_mask))
+
         return x
 
 
@@ -757,7 +740,10 @@ class Transformer(nn.Module):
     def __init__(self, encoder, decoder, src_embed, tgt_embed, generator):
         """
         encoder: Encoder, N * EncoderLayer
-
+        decoder: Decoder, N * DecoderLayer
+        src_embed: The Embeddings of the source data
+        tgt_embed: The Embeddings of the target data
+        generator: Generator after the decoder
         """
         super(Transformer, self).__init__()
         self.encoder = encoder
@@ -767,26 +753,37 @@ class Transformer(nn.Module):
         self.generator = generator 
 
     def encode(self, src, src_mask):
-        return self.encoder(self.src_embed(src), src_mask)
+        src = self.src_embed(src)
+        src = self.encoder(src, src_mask)
+        return src
 
     def decode(self, memory, src_mask, tgt, tgt_mask):
-        return self.decoder(self.tgt_embed(tgt), memory, src_mask, tgt_mask)
+        tgt = self.tgt_embed(tgt)
+        tgt = self.decoder(tgt, memory, src_mask, tgt_mask)
+        return tgt
 
     def forward(self, src, tgt, src_mask, tgt_mask):
-        # encoder的结果作为decoder的memory参数传入，进行decode
-        return self.decode(self.encode(src, src_mask), src_mask, tgt, tgt_mask)
+        # The result of encoder should be taken as the input of the decoder memory
+        # m = encoder(Q=x, K=x, V=x)
+        # result = decoder(Q=x, K=m, V=m)
+        memory = self.encode(src, src_mask)
+        tgt = self.decode(memory, src_mask, tgt, tgt_mask)
+        return tgt
 
 
 class Generator(nn.Module):
     # vocab: tgt_vocab
     def __init__(self, d_model, vocab):
         super(Generator, self).__init__()
-        # decode后的结果，先进入一个全连接层变为词典大小的向量
+
+        # The data after the decode. Change the dimension from the d_model to the vocab
         self.proj = nn.Linear(d_model, vocab)
 
     def forward(self, x):
-        # 然后再进行log_softmax操作(在softmax结果上再做多一次log运算)
-        return F.log_softmax(self.proj(x), dim=-1)
+        # perform softmax and log for the outcome of the decoder
+        x = self.proj(x)
+        x = F.log_softmax(x, dim=-1)
+        return x
 
 
 def make_model(
@@ -798,25 +795,33 @@ def make_model(
     h = 8,         # Head numbers
     dropout=0.1    # dropout rate
     ):
-    
+
+    # N, d_model, d_ff, h, dropout = 6, 512, 2048, 8, 0.1
+
     c = copy.deepcopy
     
     # instantiate the Attention module
-    attn = MultiHeadedAttention(h, d_model).to(DEVICE)
+    attn = MultiHeadedAttention_v2(h, d_model).to(DEVICE)
     
     # instantiate the Feed Forward module
     ff = PositionwiseFeedForward(d_model, d_ff, dropout).to(DEVICE)
     
     # instantiate the PositionalEncoding module
     position = PositionalEncoding(d_model, dropout).to(DEVICE)
-    
+
+    # encoder and decoder of the
+    encoder = Encoder(EncoderLayer(d_model, c(attn), c(ff), dropout).to(DEVICE), N).to(DEVICE)
+
+    decoder = Decoder(DecoderLayer(d_model, c(attn), c(attn), c(ff), dropout).to(DEVICE), N).to(DEVICE)
+
+    src_embed = nn.Sequential(Embeddings(d_model, src_vocab).to(DEVICE), c(position))
+
+    tgt_embed = nn.Sequential(Embeddings(d_model, tgt_vocab).to(DEVICE), c(position)),
+
+    generator = Generator(d_model, tgt_vocab)
+
     # instantiate the Transformer module
-    model = Transformer(
-        Encoder(EncoderLayer(d_model, c(attn), c(ff), dropout).to(DEVICE), N).to(DEVICE),
-        Decoder(DecoderLayer(d_model, c(attn), c(attn), c(ff), dropout).to(DEVICE), N).to(DEVICE),
-        nn.Sequential(Embeddings(d_model, src_vocab).to(DEVICE), c(position)),
-        nn.Sequential(Embeddings(d_model, tgt_vocab).to(DEVICE), c(position)),
-        Generator(d_model, tgt_vocab)).to(DEVICE)
+    model = Transformer(encoder, decoder, src_embed, tgt_embed, generator).to(DEVICE)
     
     # This was important from their code. 
     # Initialize parameters with Glorot / fan_avg.
@@ -869,7 +874,7 @@ class SimpleLossCompute:
         # __call__() method to realize the class as a function
         x = self.generator(x)
 
-        # loss = (x - y) / norm, x and y in (N, L*D) 只保留 Batch 这个维度
+        # loss = (x - y) / norm, x and y in (N, L*D)
         loss = self.criterion(x.contiguous().view(-1, x.size(-1)),
                               y.contiguous().view(-1)) / norm
 
@@ -916,13 +921,17 @@ def get_std_opt(model):
             torch.optim.Adam(model.parameters(), lr=0, betas=(0.9, 0.98), eps=1e-9))
 
 
+import itertools
+
 def run_epoch(data, model, loss_compute, epoch):
     start = time.time()
     total_tokens = 0.
     total_loss = 0.
     tokens = 0.
 
-    for i , batch in enumerate(data):
+    for i, batch in enumerate(data):
+
+        # batch = next(iter(data))
         out = model(batch.src, batch.trg, batch.src_mask, batch.trg_mask)
         loss = loss_compute(out, batch.trg_y, batch.ntokens)
 
@@ -939,9 +948,9 @@ def run_epoch(data, model, loss_compute, epoch):
     return total_loss / total_tokens
 
 
-def train(data, model, criterion, optimizer):
+def train(dataset, model, criterion, optimizer):
     """
-    训练并保存模型
+    Train the model and save it
     """
     # 初始化模型在dev集上的最优Loss为一个较大值
     best_dev_loss = 1e5
@@ -949,12 +958,12 @@ def train(data, model, criterion, optimizer):
     for epoch in range(EPOCHS):
         # 模型训练
         model.train()
-        run_epoch(data.train_data, model, SimpleLossCompute(model.generator, criterion, optimizer), epoch)
+        run_epoch(dataset.train_data, model, SimpleLossCompute(model.generator, criterion, optimizer), epoch)
         model.eval()
 
         # 在dev集上进行loss评估
         print('>>>>> Evaluate')
-        dev_loss = run_epoch(data.dev_data, model, SimpleLossCompute(model.generator, criterion, None), epoch)
+        dev_loss = run_epoch(dataset.dev_data, model, SimpleLossCompute(model.generator, criterion, None), epoch)
         print('<<<<< Evaluate loss: %f' % dev_loss)
         
         # TODO: 如果当前epoch的模型在dev集上的loss优于之前记录的最优loss则保存当前模型，并更新最优loss值
@@ -967,7 +976,7 @@ def train(data, model, criterion, optimizer):
 
 
 # 数据预处理
-data = PrepareData(TRAIN_FILE, DEV_FILE)
+dataset = PrepareData(TRAIN_FILE, DEV_FILE)
 src_vocab = len(data.en_word_dict)
 tgt_vocab = len(data.cn_word_dict)
 print("src_vocab %d" % src_vocab)
