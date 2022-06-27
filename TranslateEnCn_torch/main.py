@@ -38,8 +38,8 @@ D_FF = 1024       # feed forward dimensions
 DROPOUT = 0.1     # dropout rate
 MAX_LENGTH = 60   # The max length of a sentence
 
-TRAIN_FILE = 'nmt/en-cn/train.txt'    # 训练集数据文件
-DEV_FILE = "nmt/en-cn/dev.txt"        # 验证(开发)集数据文件
+TRAIN_FILE = 'corpus/train.json'    # Train data
+DEV_FILE = "corpus/dev.json"        # Develop / Evaluate data
 SAVE_FILE = 'save/model.pt'           # 模型保存路径(注意如当前目录无save文件夹需要自己创建)
 DEVICE = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
@@ -70,10 +70,14 @@ def seq_padding(X, padding=0):
 
 
 class PrepareData:
-    def __init__(self, train_file, dev_file):
-        
+    def __init__(self, train_path):
+        self.train_path = train_path
+        pass
+
+    def run(self):
+
         # Load the data and split into word tokens
-        self.train_en, self.train_cn = self.load_data(train_file)
+        self.train_en, self.train_cn = self.load_data(self.train_path)
         self.dev_en, self.dev_cn = self.load_data(dev_file)
 
         # Build the vocabulary
@@ -89,7 +93,7 @@ class PrepareData:
         self.dev_data = self.splitBatch(self.dev_en, self.dev_cn, BATCH_SIZE)
 
 
-    def load_data(self, path):
+    def load_data(self, train_path):
         """
         read the bilinguistic corpus in English and Chinese
         use nltk word_tokenize to change corpus into word tokens
@@ -102,8 +106,9 @@ class PrepareData:
         en = []
         cn = []
         
-        path = "./corpus/translation2019zh_valid_39323.json"
-        json_list = json.load(open(path))
+        # self.train_path = "./corpus/translation2019zh_valid_39323.json"
+        self.train_path = train_path
+        json_list = json.load(open(train_path))
         for list_content in json_list:
             en.append(['BOS'] + word_tokenize(list_content["english"]) + ['EOS'])
             cn.append(['BOS'] + [ch for ch in list_content["chinese"]] + ['EOS'])
@@ -130,49 +135,49 @@ class PrepareData:
         # Add UNK and PAD, for 0 and 1
         ls = word_count.most_common(max_words)
         
-        # 统计词典的总词数
+        # Static the total occurence of each word
         total_words = len(ls) + 2       # Because 0 and 1 have been taken placed
         word_dict = {w[0]: index + 2 for index, w in enumerate(ls)}
         word_dict['UNK'] = UNK
         word_dict['PAD'] = PAD
         
-        # 再构建一个反向的词典, 供id转单词使用
+        # Build another reverse dictionary from id to tokens
         index_dict = {v: k for k, v in word_dict.items()}
 
         return word_dict, total_words, index_dict
 
     def wordToID(self, en, cn, en_dict, cn_dict, sort=True):
         """
-        该方法可以将翻译前(英文)数据和翻译后(中文)数据的单词列表表示的数据
-        均转为id列表表示的数据
-        如果sort参数设置为True, 则会以翻译前(英文)的句子(单词数)长度排序
-        以便后续分batch做padding时, 同批次各句子需要padding的长度相近减少padding量
+        This method can change the English tokens and Chinese tokens to id
+        If the sort attribute is True, the token id will be sorted by the length
+            of English sentence length
+        This is for the padding procedure to reduce the total length of a batch
+
         """
-        # 计算英文数据条数
+        # Calculate the English Sentence Number
         length = len(en)
         
-        # TODO: 将翻译前(英文)数据和翻译后(中文)数据都转换为id表示的形式
+        # TODO: Change the word token into id for English and Chinese
         out_en_ids = [[en_dict.get(w, 0) for w in sent] for sent in en]
         out_cn_ids = [[cn_dict.get(w, 0) for w in sent] for sent in cn]
 
-        # 构建一个按照句子长度排序的函数
+        # Build a function for return the order of sentence length
         def len_argsort(seq):
             """
-            传入一系列句子数据(分好词的列表形式), 
-            按照句子长度排序后, 返回排序后原来各句子在数据中的索引下标
+            seq: [sentence0, sentence1, ..., sentenceN]
+            return: The sentence index by the order of sentence length / token number
             """
             return sorted(range(len(seq)), key=lambda x: len(seq[x]))
 
-        # 把中文和英文按照同样的顺序排序
+        # Sort the sentence by the sentence length
         if sort:
-            # 以英文句子长度排序的(句子下标)顺序为基准
+            # Base on the english sentence length
             sorted_index = len_argsort(out_en_ids)
-            
-            # TODO: 对翻译前(英文)数据和翻译后(中文)数据都按此基准进行排序
             out_en_ids = [out_en_ids[i] for i in sorted_index]
             out_cn_ids = [out_cn_ids[i] for i in sorted_index]
             
         return out_en_ids, out_cn_ids
+
 
     def splitBatch(self, en, cn, batch_size, shuffle=True):
         """
@@ -213,13 +218,18 @@ class PrepareData:
 class Embeddings(nn.Module):
     def __init__(self, d_model, vocab):
         super(Embeddings, self).__init__()
-        # Embedding层
+
+        # Embedding using the embedding method of PyTorch
         self.lut = nn.Embedding(vocab, d_model)
-        # Embedding维数
+
+        # Embedding Dimensions
         self.d_model = d_model
 
     def forward(self, x):
+
         # 返回x对应的embedding矩阵（需要乘以math.sqrt(d_model)）
+        # Return the embedding matrix corresponding with x
+        # The Embedding need to multipe the sqrt of the dimension
         return self.lut(x) * math.sqrt(self.d_model)
 
 
@@ -322,7 +332,7 @@ class MultiHeadedAttention_v2(nn.Module):
         self.model_dimension = d_model
         self.dropout = dropout
         self.H = h                     # Number of head
-        self.D = int(d_model / h)      
+        self.D = int(d_model / h)
         
         # The weights of Q, K and V
         self.Wq = nn.Linear(d_model, d_model)
@@ -650,17 +660,19 @@ class EncoderLayer(nn.Module):
 class Decoder(nn.Module):
     def __init__(self, layer, N):
         super(Decoder, self).__init__()
-        # TODO: 参照EncoderLayer完成成员变量定义
-        # 复制N个encoder layer
+
+        # TODO: Build the Decoder
+        # Duplicate N times of decoder layer
         self.layers = clones(layer, N)
+
         # Layer Norm
         self.norm = LayerNorm(layer.size)
         
     def forward(self, x, memory, src_mask, tgt_mask):
         """
-        使用循环连续decode N次(这里为6次)
-        这里的Decoderlayer会接收一个对于输入的attention mask处理
-        和一个对输出的attention mask + subsequent mask处理
+        Duplicate N times of decoder layer, here we use 6 times
+        The Decoder layer will receive the outcome from the
+        For each output, perform attention mask and subsequent mask
         """
         for layer in self.layers:
             x = layer(x, memory, src_mask, tgt_mask)
@@ -810,14 +822,16 @@ def make_model(
     # Initialize parameters with Glorot / fan_avg.
     for p in model.parameters():
         if p.dim() > 1:
-            # 这里初始化采用的是nn.init.xavier_uniform
+            # Take the xavier method for initialization nn.init.xavier_uniform
             nn.init.xavier_uniform_(p)
     return model.to(DEVICE)
 
 
 
 class LabelSmoothing(nn.Module):
-    """标签平滑处理"""
+    """
+    TODO: Perform Label smoothing
+    """
     def __init__(self, size, padding_idx, smoothing=0.0):
         super(LabelSmoothing, self).__init__()
         self.criterion = nn.KLDivLoss(reduction='sum')
@@ -964,7 +978,7 @@ model = make_model(
                     src_vocab, 
                     tgt_vocab, 
                     LAYERS, 
-                    D_MODEL, 
+                    D_MODEL,
                     D_FF,
                     H_NUM,
                     DROPOUT
