@@ -176,47 +176,55 @@ class PrepareData:
 
     def splitBatch(self, en, cn, batch_size, shuffle=True):
         """
-        将以单词id列表表示的翻译前(英文)数据和翻译后(中文)数据
-        按照指定的batch_size进行划分
-        如果shuffle参数为True, 则会对这些batch数据顺序进行随机打乱
+        TODO: Split the data into different data batch
+        If shuffle is true, the order of the data batch is shuffled
         """
-        # 在按数据长度生成的各条数据下标列表[0, 1, ..., len(en)-1]中
-        # 每隔指定长度(batch_size)取一个下标作为后续生成batch的起始下标
         idx_list = np.arange(0, len(en), batch_size)
-        # 如果shuffle参数为True, 则将这些各batch起始下标打乱
+
+        # If shuffle is true, the order of the train data is shuffled
         if shuffle:
             np.random.shuffle(idx_list)
-        # 存放各个batch批次的句子数据索引下标
+
+        # batch_indexs is a multilayer list, stores the index of each label
         batch_indexs = []
         for idx in idx_list:
-            # 注意, 起始下标最大的那个batch可能会超出数据大小
-            # 因此要限定其终止下标不能超过数据大小
-
+            # The order of the largest batch maybe beyond the data range
+            # if idx is more than the total dataset range, take the minimum one
             batch_indexs.append(np.arange(idx, min(idx + batch_size, len(en))))
-        
-        # 按各batch批次的句子数据索引下标, 构建实际的单词id列表表示的各batch句子数据
+
+        # Index the sentence order by the batch_indexs
         batches = []
         for batch_index in batch_indexs:
-            # 按当前batch的各句子下标(数组批量索引)提取对应的单词id列表句子表示数据
+
+            # index the batch data for English and Chinese
             batch_en = [en[index] for index in batch_index]  
             batch_cn = [cn[index] for index in batch_index]
-            # 对当前batch的各个句子都进行padding对齐长度
-            # 维度为: batch数量×batch_size×每个batch最大句子长度
+
+            # Perform padding operation for each pad.
+            # shape -> (bath_size, max_sentence_size)
             batch_cn = seq_padding(batch_cn)
             batch_en = seq_padding(batch_en)
-            # 将当前batch的英文和中文数据添加到存放所有batch数据的列表中
+
+            # Instance a Batch Object and append it to the list
             batches.append(Batch(batch_en, batch_cn))
 
         return batches
 
 
 class Batch:
-    "Object for holding a batch of data with mask during training."
+    """
+    TODO:Object for holding a batch of data with mask during training.
+    """
 
     def __init__(self, src, trg=None, pad=0):
+        """
+        src: source data like token id after padding in a batch  src.shape -> (N, L_src)
+        trg: target data like token id after padding in a batch  trg.shape -> (N, L_trg)
+        """
+
         # Change numpy array into torch.Tensor using long int
-        src = torch.from_numpy(src).to(DEVICE).long()  # src: source English
-        trg = torch.from_numpy(trg).to(DEVICE).long()  # trg: target Chinese
+        src = torch.from_numpy(src).to(DEVICE).long()
+        trg = torch.from_numpy(trg).to(DEVICE).long()
         self.src = src
 
         # Get the masked boolean matrix
@@ -225,7 +233,7 @@ class Batch:
 
         # If there is the target data, add mask to the target data in decoder
         if trg is not None:
-            # Because we use the seq to seq model, we have to practice the token one by one
+            # Because we use the seq to seq model, we have to predict the token one by one
             # decoder using the left without the last one as the input
             self.trg = trg[:, :-1]
 
@@ -265,26 +273,37 @@ class Batch:
         return attn_mask
 
 
-def subsequent_mask(size):
+def subsequent_mask(L_length):
     """
+    TODO: Generate the Self-Mask for the Masked-Self-Attention matrix with a length
+    L_length: The lengths of a sentence
+    size = 4
+    First:                Second:
     [[0, 1, 1, 1],        [[ True, False, False, False],
      [0, 0, 1, 1],         [ True,  True, False, False],
      [0, 0, 0, 1],         [ True,  True,  True, False],
      [0, 0, 0, 0]]         [ True,  True,  True,  True]]
     """
     # Set the mask square size
-    attn_shape = (1, size, size)
+    attn_shape = (1, L_length, L_length)
 
-    # Generate a triangle matrix with top right 1 (without eye) and left bottom 0
+    # First: Generate a triangle matrix with top right 1 (without eye) and left bottom 0
     subsequent_mask = np.triu(np.ones(attn_shape), k=1).astype('uint8')
 
-    # Generate a triangle matrix with top right False (without eye) and left bottom True
+    # Second: Generate a triangle matrix with top right False (without eye) and left bottom True
     subsequent_mask = torch.from_numpy(subsequent_mask) == 0
+
+    # subsequent_mask.shape -> (1, L_length, L_length)
     return subsequent_mask
 
 
 
 class Embeddings(nn.Module):
+    """
+    TODO: Automatic Embedding. Change the dimension of the vocabulary data.
+    From the 1-hot vocabulary data to d_model dimensions
+    """
+
     def __init__(self, d_model, vocab):
         super(Embeddings, self).__init__()
 
@@ -295,13 +314,9 @@ class Embeddings(nn.Module):
         self.d_model = d_model
 
     def forward(self, x):
-
-        # 返回x对应的embedding矩阵（需要乘以math.sqrt(d_model)）
         # Return the embedding matrix corresponding with x
-        # The Embedding need to multipe the sqrt of the dimension
+        # The Embedding need to multiply the sqrt of the dimension
         return self.lut(x) * math.sqrt(self.d_model)
-
-
 
 
 
@@ -315,6 +330,8 @@ class PositionalEncoding(nn.Module):
         
         # 初始化一个size为 max_len(设定的最大长度)×embedding维度 的全零矩阵
         # 来存放所有小于这个长度位置对应的porisional embedding
+
+        # Initilize an zero matrix with the size as (max_len, d_model)
         pe = torch.zeros(max_len, d_model, device=DEVICE)
         # 生成一个位置下标的tensor矩阵(每一行都是一个位置下标)
         """
@@ -327,7 +344,8 @@ class PositionalEncoding(nn.Module):
                 ...])
         """
         position = torch.arange(0., max_len, device=DEVICE).unsqueeze(1)
-        # 这里幂运算太多，我们使用exp和log来转换实现公式中pos下面要除以的分母（由于是分母，要注意带负号）
+
+        # Realize the calucation of the positional embedding by torch.exp() and math.log()
         div_term = torch.exp(torch.arange(0., d_model, 2, device=DEVICE) * -(math.log(10000.0) / d_model))
         
         # TODO: 根据公式，计算各个位置在各embedding维度上的位置纹理值，存放到pe矩阵中
@@ -455,12 +473,6 @@ class MultiHeadedAttention(nn.Module):
         assert d_model % h == 0
         self.d_k = d_model // h   # Length of a head
         self.h = h                # head numbers
-        
-        # Define 4 fully connected layer
-        # Wq -> Query
-        # Wk -> Key
-        # Wv -> Value
-        # L -> Transform after the data being concatenate by h heads 
 
         self.linears = clones(nn.Linear(d_model, d_model), 4)
         self.attn = None
@@ -475,17 +487,19 @@ class MultiHeadedAttention(nn.Module):
         H = self.h
         D = self.d_k
         
-
+        # l: linear module
+        # x: query, key, value: the data logits as x
+        # l(x): Q=Wq*x, K=Wk*x, V=Wv+x
         query, key, value = [l(x).view(N, -1, H, D).transpose(1, 2) 
                              for l, x in zip(self.linears, (query, key, value))]
         
-        # 调用上述定义的attention函数计算得到h个注意力矩阵跟value的乘积，以及注意力矩阵
+        # Use attention module to get the attention matrix and the
         x, self.attn = attention(query, key, value, mask=mask, dropout=self.dropout)
         
-        # 将h个多头注意力矩阵concat起来（注意要先把h变回到第三维的位置）
+        # Concatenate the separated heads into the original shape
         x = x.transpose(1, 2).contiguous().view(N, -1, self.h * self.d_k)
         
-        # 使用self.linears中构造的最后一个全连接函数来存放变换后的矩阵进行返回
+        # Add one fully connected layer. Use the last one of the linears module list
         return self.linears[-1](x)
 
 
@@ -609,6 +623,7 @@ class Encoder(nn.Module):
 
 class EncoderLayer(nn.Module):
     """
+    TODO: Build the encoder layer
     X
     MHA = Multihead_Attention(X)
     AN1 = Add_Norm_Layer(X + MHA)
@@ -631,14 +646,16 @@ class EncoderLayer(nn.Module):
         self.size = size
 
     def forward(self, x, mask):
+        """
+
+        """
         
         # Data stream inside a 
         # x = self.self_attn(x, x, x, mask)
         x = self.add_norm_1(x, x, x, x, mask)
         # x = self.feed_forward(x)
         x = self.add_norm_2(x, x)
-        
-        # 注意到attn得到的结果x直接作为了下一层的输入
+
         return x
 
 
@@ -977,8 +994,8 @@ def train(dataset, model, criterion, optimizer):
 
 # 数据预处理
 dataset = PrepareData(TRAIN_FILE, DEV_FILE)
-src_vocab = len(data.en_word_dict)
-tgt_vocab = len(data.cn_word_dict)
+src_vocab = len(dataset.en_word_dict)
+tgt_vocab = len(dataset.cn_word_dict)
 print("src_vocab %d" % src_vocab)
 print("tgt_vocab %d" % tgt_vocab)
 
