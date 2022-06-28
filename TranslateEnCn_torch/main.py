@@ -938,7 +938,7 @@ def get_std_opt(model):
             torch.optim.Adam(model.parameters(), lr=0, betas=(0.9, 0.98), eps=1e-9))
 
 
-import itertools
+
 
 def run_epoch(data, model, loss_compute, epoch):
     start = time.time()
