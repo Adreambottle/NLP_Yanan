@@ -43,8 +43,10 @@
   - one for sklearn libraries for **["knn", "random forest", "adaboost", "gbrt", "support vector regression", "lasso", "decision tree", "linear", "ridge", "elastic-net"]**
 
 * `HornorOfKings`
-  * Perform statistics and analysis for th mobile game Honor of Kings,
+  * Perform statistics and analysis for the mobile game Honor of Kings,
   * Train a neural network model to extract game events from raw data. 
   * Use time-series algorithms to predict future player intent and game events.
-  * Build an intelligent commentary algorithm by NLG, match automatic commentary for game anchors.
+  * Build an intelligent commentary algorithm by NLG, and match automatic commentary for game anchors.
 
+* `Word2Vec`
+  * The source code of Migolov 
