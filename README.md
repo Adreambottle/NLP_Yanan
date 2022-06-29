@@ -3,7 +3,7 @@
 * `DistilBert` The instruction of how to realize distilbert
 
   * Working Mechanism of Distillation and Distiller
-  * Distil Models 
+  * Distillation Models 
     * DistilBert (Main)
     * BERT-PKD
     * Distilled BiLSTM
@@ -20,10 +20,10 @@
 * `BertStructure`
 
   * **Transformers_Bert.md**  
-  	The working mechanism for huggingface transformers and bert.
+  	The working mechanism for hugging face transformers and bert.
   	
   * **Simple_Transformer.md**  
-  	How does the simple transformer works? And the down stream task like NER, Translation, Generation, Representation
+  	How does the simple transformer work? And the downstream task like NER, Translation, Generation, Representation
 
   * **DNN2GP.md**  
   	Change Deep Neural Network to Gaussian Process to realize the linear simulation.
@@ -49,4 +49,6 @@
   * Build an intelligent commentary algorithm by NLG, and match automatic commentary for game anchors.
 
 * `Word2Vec`
-  * The source code of Migolov 
+  * The source code of Migolov Word2Vec model based on C language
+  * Add Chinese Annotation.
+  * There will be future addition for more detailed annotatio.
