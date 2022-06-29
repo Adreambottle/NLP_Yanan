@@ -213,6 +213,7 @@ void SortVocab() {
   }
 }
 
+
 // 从词表中删除出现次数小于min_reduce的词，每执行一次该函数min_reduce自动加一
 void ReduceVocab() {
   int a, b = 0;
@@ -236,6 +237,8 @@ void ReduceVocab() {
   fflush(stdout);
   min_reduce++;
 }
+
+
 
 // 利用统计到的词频构建Haffman二叉树
 // 按照Haffman树的特性，出现频率越高的词其二叉树上的路径越短，即二进制编码越短
@@ -436,11 +439,12 @@ void ReadVocab() {
   fclose(fin);
 }
 
+
 //初始化神经网络结构
 void InitNet() {
   long long a, b;
   unsigned long long next_random = 1;
-  //syn0存储的是词表中每个词的词向量
+  //syn0存储的是词表中每个词的词向量, syn1储存的是Haffman Tree 中每个非叶节点的向量
   //这里为syn0分配内存空间
   //调用posiz_meanlign来获取一块数量为vocab_size*layer_size,128byte页对齐的内存
   //其中layer_size是词向量的长度
@@ -477,28 +481,37 @@ void InitNet() {
 }
 
 
+// CBOW 和 Skipgram 都有两种可以选用的算法，Hierachical Softmax 和 Negative Sampling
+// CBOW 删除了最耗时的非线性隐层，而且所有词都是共享隐藏等的
+
 //该函数为线程函数，是训练算法代码实现的主要部分
 //默认在执行该线程函数前，已经完成词表排序、Haffman树的生成以及每个词的Haffman编码计算
 void *TrainModelThread(void *id) {
-  long long a, b, d, 
-  //cw:窗口长度（中心词除外）
-  cw, 
-  //word:在提取句子时用来表示当前词在词表中的索引
-  //last_word:用于在窗口扫描辅助，记录当前扫描到的上下文单词
-  //sentence_length:当前处理的句子长度
-  //sentence_position:当前处理的单词在当前句子中的位置
-  word, 
-  last_word, sentence_length = 0, sentence_position = 0;
-  //word_count: 当前线程当前时刻已经训练的语料的长度
-  //last_word_count: 当前线程上一次记录时已训练的语料长度
-  long long word_count = 0, last_word_count = 0, 
+  
+  long long a, b, d,   
+  cw,                       //cw:窗口长度（中心词除外）
+  word,                     //word:在提取句子时用来表示当前词在词表中的索引
+  last_word,                //last_word:用于在窗口扫描辅助，记录当前扫描到的上下文单词
+  sentence_length = 0,      //sentence_length:当前处理的句子长度
+  sentence_position = 0;    //sentence_position:当前处理的单词在当前句子中的位置
+  
+
+  long long word_count = 0, //word_count: 当前线程当前时刻已经训练的语料的长度
+  last_word_count = 0,      //last_word_count: 当前线程上一次记录时已训练的语料长度
+
   //sen:当前从文件中读取的待处理的句子，存放的是每个词在词表中的索引
   sen[MAX_SENTENCE_LENGTH + 1];
   //l1:在skip—gram模型中，在syn0中定位当前词词向量的起始位置
   //l2:在syn1或syn1neg中定位中间节点向量或负采样向量的起始位置
   //target:在负采样中存储当前样本
   //label:在负采样中存储当前样本的标记
-  long long l1, l2, c, target, label, local_iter = iter;
+  long long 
+  l1, 
+  l2, 
+  c, 
+  target, 
+  label, 
+  local_iter = iter;
   //next_random:用来辅助生成随机数
   unsigned long long next_random = (long long)id;
   real f, g;
