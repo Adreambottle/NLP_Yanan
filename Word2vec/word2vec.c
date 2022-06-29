@@ -22,10 +22,10 @@
 #define EXP_TABLE_SIZE 1000
 #define MAX_EXP 6
 #define MAX_SENTENCE_LENGTH 1000
-#define MAX_CODE_LENGTH 40
+#define MAX_CODE_LENGTH 40             // MAX_CODE_LENGTH 是Huffman Tree 的深度吗，也就是单词编码的长度
 
 const int vocab_hash_size = 30000000;  // Maximum 30 * 0.7 = 21M words in the vocabulary
-                                       // const 后面定义的是常量，例如const int Max=100,则Max++会报错
+                                       // const 后面定义的是常量，例如const int Max=100,则 Max++会报错
 
 typedef float real;                    // Precision of float numbers
 
@@ -239,26 +239,40 @@ void ReduceVocab() {
 }
 
 
+//         Root
+//          /\
+//      NL       NL
+//     / \      / \
+//  NL    NL    NL  g
+//  /\    /\    /\   
+// a  b  c  d  e  f    
 
 // 利用统计到的词频构建Haffman二叉树
 // 按照Haffman树的特性，出现频率越高的词其二叉树上的路径越短，即二进制编码越短
+// Huffman Tree 只有每个叶节点才表示一个单词，非叶节点只是 0 或 1，表示到达叶节点的路径
+// Huffman 编码，每个词 w 都可以从树的根结点沿着唯一一条路径被访问到
+// Huffman Tree 的构建是 bottom-up 的形式，从 N 个叶子节点代表的 N 个单词生成 (N-1) 个路径节点
+
 void CreateBinaryTree() {
-  long long a, b, i, min1i, min2i, pos1, pos2;
-  // 用来暂存一个词到根结点的Haffman树路径
-  long long point[MAX_CODE_LENGTH];
-  // 用来暂存一个词的HAffman编码
-  char code[MAX_CODE_LENGTH];
-  // 内存分配，Haffman二叉树中，若有n个叶子节点，则一共会有2n-1个节点
+  long long a, b, i, min1i, min2i, pos1, pos2;     // 用来暂存一个词到根结点的Haffman树路径
+
+  long long point[MAX_CODE_LENGTH];      // point[MAX_CODE_LENGTH] 是一个Array，用来暂存一个词的HAffman编码
+ 
+  char code[MAX_CODE_LENGTH];            // code是什么
+  
   // count数组前vocab_size个元素为Haffman树的叶子节点，初始化为词表中所有词的词频
   // count数组后vocab_size个元素为Haffman树中即将生成的非叶子节点（合并节点）的词频，初始化为一个大值1e15
   long long *count = (long long *)calloc(vocab_size * 2 + 1, sizeof(long long));
+  
   // binary数组记录各节点相对于其父节点的二进制编码（0/1）
   long long *binary = (long long *)calloc(vocab_size * 2 + 1, sizeof(long long));
+  
   // parent 数组记录每个节点的父节点
   long long *parent_node = (long long *)calloc(vocab_size * 2 + 1, sizeof(long long));
+  
   // count数组的初始化
-  for (a = 0; a < vocab_size; a++) count[a] = vocab[a].cn;
-  for (a = vocab_size; a < vocab_size * 2; a++) count[a] = 1e15;
+  for (a = 0; a < vocab_size; a++) count[a] = vocab[a].cn;           // 前vocab_size个元素为叶子节点，初始化为词表中所有词的词频
+  for (a = vocab_size; a < vocab_size * 2; a++) count[a] = 1e15;     // 后vocab_size个元素为非叶子节点，初始化为一个大值1e15
   
   // 以下部分为创建Haffman树的算法，默认词表已经按词频由高到低排序
   // pos1，pos2分别为词表中词频次低和最低的两个词的下标（初始时就是词表最末尾两个）
@@ -440,6 +454,9 @@ void ReadVocab() {
 }
 
 
+// syn0存储的是词表中每个词的词向量, 
+// syn1储存的是 Haffman Tree 中每个非叶节点的向量
+
 //初始化神经网络结构
 void InitNet() {
   long long a, b;
@@ -495,28 +512,25 @@ void *TrainModelThread(void *id) {
   sentence_length = 0,      //sentence_length:当前处理的句子长度
   sentence_position = 0;    //sentence_position:当前处理的单词在当前句子中的位置
   
-
-  long long word_count = 0, //word_count: 当前线程当前时刻已经训练的语料的长度
-  last_word_count = 0,      //last_word_count: 当前线程上一次记录时已训练的语料长度
-
-  //sen:当前从文件中读取的待处理的句子，存放的是每个词在词表中的索引
-  sen[MAX_SENTENCE_LENGTH + 1];
-  //l1:在skip—gram模型中，在syn0中定位当前词词向量的起始位置
-  //l2:在syn1或syn1neg中定位中间节点向量或负采样向量的起始位置
-  //target:在负采样中存储当前样本
-  //label:在负采样中存储当前样本的标记
   long long 
-  l1, 
-  l2, 
+  word_count = 0,           //word_count: 当前线程当前时刻已经训练的语料的长度
+  last_word_count = 0,      //last_word_count: 当前线程上一次记录时已训练的语料长度
+  sen[MAX_SENTENCE_LENGTH + 1];     //sen:当前从文件中读取的待处理的句子，存放的是每个词在词表中的索引
+
+  long long 
+  l1,                       //l1:在skip—gram模型中，在syn0中定位当前词词向量的起始位置
+  l2,                       //l2:在syn1或syn1neg中定位中间节点向量或负采样向量的起始位置
   c, 
-  target, 
-  label, 
+  target,                   //target:在负采样中存储当前样本
+  label,                    //label:在负采样中存储当前样本的标记
   local_iter = iter;
+  
   //next_random:用来辅助生成随机数
-  unsigned long long next_random = (long long)id;
+  unsigned long long 
+  next_random = (long long)id;
   real f, g;
   clock_t now;
-  //neu1:输入词向量，在CBOW模型中是Context（x）中各个词的向量和，在skip-gram模型中是中心词的词向量
+  //neu1:输入词向量，在CBOW模型中是Context(x)中各个词的向量和，在skip-gram模型中是中心词的词向量
   real *neu1 = (real *)calloc(layer1_size, sizeof(real));
   //neuele:累计误差项
   real *neu1e = (real *)calloc(layer1_size, sizeof(real));
