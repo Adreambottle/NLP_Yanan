@@ -27,7 +27,7 @@
 const int vocab_hash_size = 30000000;  // Maximum 30 * 0.7 = 21M words in the vocabulary
 // const 后面定义的是常量，例如const int Max=100,则 Max++会报错
 
-typedef float real;                    // Precision of float numbers
+typedef float real;                    // 把 float 定义为 real，真的没有必要
 
 
 //每个词的基本结构是什么样子的
@@ -48,6 +48,7 @@ struct vocab_word *vocab;
 //词hash表，该数组的下标为每个词的hash值，由词的字面ASCII码计算得到。vocab_hash[hash]中储存的是该词在词表中的索引
 int binary = 0, cbow = 1, debug_mode = 2, window = 5, min_count = 5, num_threads = 12, min_reduce = 1;
 int *vocab_hash;
+
 //vocab_max_size是一个辅助变量，每次当词表大小超出vocab_max_size时，一次性将词表大小增加1000
 //vocab_size为训练集中不同单词的个数，即词表的大小，在未构建词表时，大小当然为0
 //layer1_size为词向量的长度
@@ -506,35 +507,39 @@ void InitNet() {
 void *TrainModelThread(void *id) {
 
   long long a, b, d,
-       cw,                       //cw:窗口长度（中心词除外）
-       word,                     //word:在提取句子时用来表示当前词在词表中的索引
-       last_word,                //last_word:用于在窗口扫描辅助，记录当前扫描到的上下文单词
-       sentence_length = 0,      //sentence_length:当前处理的句子长度
-       sentence_position = 0;    //sentence_position:当前处理的单词在当前句子中的位置
+    cw,                       // cw:窗口长度（中心词除外）
+    word,                     // word:在提取句子时用来表示当前词在词表中的索引
+    last_word,                // last_word:用于在窗口扫描辅助，记录当前扫描到的上下文单词
+    sentence_length = 0,      // sentence_length:当前处理的句子长度
+    sentence_position = 0;    // sentence_position:当前处理的单词在当前句子中的位置
 
   long long
-  word_count = 0,           //word_count: 当前线程当前时刻已经训练的语料的长度
-  last_word_count = 0,      //last_word_count: 当前线程上一次记录时已训练的语料长度
-  sen[MAX_SENTENCE_LENGTH + 1];     //sen:当前从文件中读取的待处理的句子，存放的是每个词在词表中的索引
+    word_count = 0,           // word_count: 当前线程当前时刻已经训练的语料的长度
+    last_word_count = 0,      // last_word_count: 当前线程上一次记录时已训练的语料长度
+    sen[MAX_SENTENCE_LENGTH + 1];     //sen:当前从文件中读取的待处理的句子，存放的是每个词在词表中的索引
 
   long long
-  l1,                       //l1:在skip—gram模型中，在syn0中定位当前词词向量的起始位置
-  l2,                       //l2:在syn1或syn1neg中定位中间节点向量或负采样向量的起始位置
-  c,
-  target,                   //target:在负采样中存储当前样本
-  label,                    //label:在负采样中存储当前样本的标记
-  local_iter = iter;
+    l1,                       // l1:在skip—gram模型中，在syn0中定位当前词词向量的起始位置
+    l2,                       // l2:在syn1或syn1neg中定位中间节点向量或负采样向量的起始位置
+    c,                        // 在滑动窗口操作的时候特指窗口内的某个单词
+    target,                   // target:在负采样中存储当前样本
+    label,                    // label:在负采样中存储当前样本的标记
+    local_iter = iter;
 
   //next_random:用来辅助生成随机数
   unsigned long long
   next_random = (long long)id;
-  real f, g;
+  real f, g;                     // real 就是 float 的意思
   clock_t now;
-  //neu1:输入词向量，在CBOW模型中是Context(x)中各个词的向量和，在skip-gram模型中是中心词的词向量
-  real *neu1 = (real *)calloc(layer1_size, sizeof(real));
-  //neuele:累计误差项
+  
+  //neu1:输入词向量，在CBOW模型中是 Context(x) 即窗口内中各个词的向量和，在skip-gram模型中是中心词的词向量
+  //neu1e:累计误差项，即 |real - pred|, neu1 和 neu1e 都是内存上连续100个float的向量，
+
+  real *neu1 = (real *)calloc(layer1_size, sizeof(real));     // layer1_size = 100，表示每个单词映射成100个维度
   real *neu1e = (real *)calloc(layer1_size, sizeof(real));
+  
   FILE *fi = fopen(train_file, "rb");
+  
   //每个进程对应一段文本，根据当前线程的id找到该线程对应文本的初始位置
   //file_size就是之前LearnVocabFramTrainFile和ReadVocab函数中获取的训练文件的大小
   fseek(fi, file_size / (long long)num_threads * (long long)id, SEEK_SET);
@@ -602,36 +607,40 @@ void *TrainModelThread(void *id) {
       continue;
     }
 
-    //取出当前单词
-    word = sen[sentence_position];
+    
+    word = sen[sentence_position];        // sen:当前从文件中读取的待处理的句子，存放的是每个词在词表中的索引
+                                          // word: 当前词在词表中的索引
     if (word == -1) continue;
-    //初始化输入词向量
-    for (c = 0; c < layer1_size; c++) neu1[c] = 0;
-    //初始化累计误差项
-    for (c = 0; c < layer1_size; c++) neu1e[c] = 0;
-    //生成一个[0,window-1]的随机数，用来确定｜context（w）｜窗口的实际宽度（也许是用来提高训练速率？）
-    next_random = next_random * (unsigned long long)25214903917 + 11;
-    b = next_random % window;
+    
+    for (c = 0; c < layer1_size; c++) neu1[c] = 0;     // 初始化输入词向量，neu1:输入词向量，Context的向量和
+    
+    for (c = 0; c < layer1_size; c++) neu1e[c] = 0;    // 初始化累计误差项，neu1e: 输入词的误差，即 error|pred - real|
+    
+    
+    next_random = next_random * (unsigned long long)25214903917 + 11;   // window 是一个常数 window = 5
+    b = next_random % window;                         //生成一个[0, window-1]的随机数，用来确定｜context(w)｜窗口的实际宽度
 
 
-    //如果使用的是CBOW模型：输入是某单词周围窗口单词的词向量，来预测该中心单词本身
-    if (cbow) {                 //train the cbow architecture
+    
+    if (cbow) {                 // 如果使用的是CBOW模型：输入是某单词周围窗口单词的词向量，来预测该中心单词本身
 
-      cw = 0;
+      cw = 0;                   // cw:窗口长度（中心词除外）
 
       // 一个词的窗口为[sentence_position - window + b，sentence_position + window - b]
       // 因此窗口总长度为 2*window - 2*b + 1，单扇窗的长度是 window - b
-      for (a = b; a < window * 2 + 1 - b; a++)  // 从 b 的位置开始，遍历窗口中的每个位置
+      for (a = b; a < window * 2 + 1 - b; a++)   // 从 b 的位置开始，遍历窗口中的每个位置
 
-        if (a != window) {                       //去除窗口的中心词，这是我们要预测的内容，仅仅提取上下文
-          c = sentence_position - window + a;
-          if (c < 0) continue;
-          if (c >= sentence_length) continue;
-          //sen数组中存放的是句子中的每个词在词表中的索引
-          last_word = sen[c];
+        if (a != window) {                       // 去除窗口的中心词，这是我们要预测的内容，仅仅提取上下文
+          c = sentence_position - window + a;    // c 代表的是正在处理的 word 在 sentence 中文位置
+          if (c < 0) continue;                   // 如果当前词的位置小于0就不计算
+          if (c >= sentence_length) continue;    // 如果当前词的位置大于每句话的长度也不计算
+          
+          last_word = sen[c];                    //sen数组中存放的是句子中的每个词在词表中的索引
           if (last_word == -1) continue;
-          //计算窗口中词向量的和
-          for (c = 0; c < layer1_size; c++) neu1[c] += syn0[c + last_word * layer1_size];
+          
+          
+          for (c = 0; c < layer1_size; c++)     //计算窗口中词向量的和
+            neu1[c] += syn0[c + last_word * layer1_size];
           //统计实际窗口中的有效词数
           cw++;
         }
