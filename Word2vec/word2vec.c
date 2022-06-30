@@ -30,21 +30,21 @@ const int vocab_hash_size = 30000000;  // Maximum 30 * 0.7 = 21M words in the vo
 typedef float real;                    // 把 float 定义为 real，真的没有必要
 
 
-//每个词的基本结构是什么样子的
-// 结构体（struct）是由一系列具有相同类型或不同类型的数据构成的数据集合
+// 定义每个词的基本结构类
 struct vocab_word {
-  long long cn; // 词频，从训练集中计数或者直接提供词频文件
-  int *point; // Haffman树中从根节点到该词的路径，存放的是路径上每个节点的索引
-  //word是该词的字面值
-  //code是该词的haffman编码
-  //codelen为该词haffman编码的长度
-  char *word, *code, codelen;
+  long long cn;   // 词频，从训练集中计数或者直接提供词频文件
+  int *point;     // Haffman树中从根节点到该词的路径，存放的是路径上每个节点的索引  
+  char *word,     // word 是该词的字面值
+       *code,     // code 是该词的 haffman 编码
+       codelen;   // codelen 为该词haffman编码的长度
 };
 
 char train_file[MAX_STRING], output_file[MAX_STRING];
 char save_vocab_file[MAX_STRING], read_vocab_file[MAX_STRING];
+
 //词表，该数组的下标表示这个词在此表中的位置，也称之为这个词在词表中的索引
 struct vocab_word *vocab;
+
 //词hash表，该数组的下标为每个词的hash值，由词的字面ASCII码计算得到。vocab_hash[hash]中储存的是该词在词表中的索引
 int binary = 0, cbow = 1, debug_mode = 2, window = 5, min_count = 5, num_threads = 12, min_reduce = 1;
 int *vocab_hash;
@@ -278,11 +278,10 @@ void CreateBinaryTree() {
   for (a = 0; a < vocab_size; a++) count[a] = vocab[a].cn;           // 前vocab_size个元素为叶子节点，初始化为词表中所有词的词频
   for (a = vocab_size; a < vocab_size * 2; a++) count[a] = 1e15;     // 后vocab_size个元素为非叶子节点，初始化为一个大值1e15
 
-  // 以下部分为创建Haffman树的算法，默认词表已经按词频由高到低排序
-  // pos1，pos2分别为词表中词频次低和最低的两个词的下标（初始时就是词表最末尾两个）
-  // </s>词也包含在树内
-  pos1 = vocab_size - 1;
-  pos2 = vocab_size;
+  // 以下部分为创建 Haffman 树的算法，默认词表已经按词频由高到低排序
+  pos1 = vocab_size - 1;                       // pos1 为词表中词频倒数第二低的词下标（就是词表中倒数第二个的）
+  pos2 = vocab_size;                           // pos2 为词表中词频最低的词的下标（就是词表最末尾的）
+  
   // 最多进行vocab_size-1次循环操作，每次添加一个节点，即可构成完整的树
   for (a = 0; a < vocab_size - 1; a++) {
     // 比较当前的pos1和pos2，在min1i、min2i中记录当前词频最小和次小节点的索引
@@ -327,8 +326,9 @@ void CreateBinaryTree() {
     b = a;
     i = 0;
     while (1) {
+      
       // 不断向上寻找叶子结点的父节点，将binary数组中存储的路径的二进制编码增加到code数组末尾
-      code[i] = binary[b];
+      code[i] = binary[b];     // code是该词的haffman编码
       // 在point数组中增加路径节点的编号
       point[i] = b;
       // Haffman编码的当前长度，从叶子结点到当前节点的深度
@@ -353,6 +353,8 @@ void CreateBinaryTree() {
   free(binary);
   free(parent_node);
 }
+
+
 
 //从训练文件中获取所有词汇并构建词表和hash表
 void LearnVocabFromTrainFile() {
@@ -519,6 +521,7 @@ void InitNet() {
   // 创建 Haffman 二叉树
   CreateBinaryTree();
 }
+
 
 
 // CBOW 和 Skipgram 都有两种可以选用的算法，Hierachical Softmax 和 Negative Sampling
