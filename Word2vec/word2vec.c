@@ -56,12 +56,15 @@ long long vocab_max_size = 1000, vocab_size = 0, layer1_size = 100;
 long long train_words = 0, word_count_actual = 0, iter = 5, file_size = 0, classes = 0;
 real alpha = 0.025, starting_alpha, sample = 1e-3;
 
-//syn0存储的是词表中每个词的词向量
-//syn1存储的是Haffman树中每个非叶节点的向量
-//syn1neg是负采样时每个词的辅助向量
-//expTable是提前计算好的Sigmoid函数表
-real *syn0, *syn1, *syn1neg, *expTable;//real是取实数的意思
-clock_t start; //计时函数
+
+
+                      // real是取实数的意思
+real  *syn0,          // syn0存储的是词表中每个词的词向量
+      *syn1,          // syn1存储的是Haffman树中每个非叶节点的向量
+      *syn1neg,       // syn1neg是负采样时每个词的辅助向量
+      *expTable;      // expTable是提前计算好的Sigmoid函数表
+
+clock_t start;        //计时函数
 
 int hs = 0, negative = 5;
 const int table_size = 1e8;
@@ -455,46 +458,65 @@ void ReadVocab() {
 }
 
 
-// syn0存储的是词表中每个词的词向量,
-// syn1储存的是 Haffman Tree 中每个非叶节点的向量
+// syn0 存储的是词表中每个词的词向量，初始化为0
+// syn1 储存的是 Haffman Tree 中每个非叶节点的向量，初始化为一个[-0.5, 0.5]的小数
+// syn1neg 储存的是负采样样本的词向量，初始化为0
+// syn0, syn1, syn1neg 都是一个 vocab_size * layer_size 的矩阵
+
+//[[a0, a1, a2, ..., a100],            embedding 的维度即 layer1_size 是100
+// [b0, b1, b2, ..., b100],            vocab_size 的维度，即词表的长度，这里用 a-z 26
+// [c0, c1, c2, ..., c100],
+//         ...
+// [z0, z1, z2, ..., z100]]
 
 //初始化神经网络结构
 void InitNet() {
-  long long a, b;
+  
+  long long a, b;   
   unsigned long long next_random = 1;
-  //syn0存储的是词表中每个词的词向量, syn1储存的是Haffman Tree 中每个非叶节点的向量
-  //这里为syn0分配内存空间
-  //调用posiz_meanlign来获取一块数量为vocab_size*layer_size,128byte页对齐的内存
-  //其中layer_size是词向量的长度
+
+  // syn0存储的是词表中每个词的词向量, syn1储存的是Haffman Tree 中每个非叶节点的向量，这里为syn0分配内存空间
+  // 调用 posiz_meanlign 来获取一块数量为 vocab_size*layer_size, 128byte 页对齐的内存，其中layer_size是词向量的长度
   a = posix_memalign((void **)&syn0, 128, (long long)vocab_size * layer1_size * sizeof(real));
   if (syn0 == NULL) {printf("Memory allocation failed\n"); exit(1);}
 
-  //多层Softmax回归
+  // 如果使用多层Softmax回归
+  // 则需要为 syn1 分配内存空间。syn1存储的是Haffman树中每个非叶节点的向量。
   if (hs) {
-    //syn1存储的是Haffman树中每个非叶节点的向量
-    //这里为syn1分配内存空间
+    // syn1 分配内存空间
     a = posix_memalign((void **)&syn1, 128, (long long)vocab_size * layer1_size * sizeof(real));
     if (syn1 == NULL) {printf("Memory allocation failed\n"); exit(1);}
-    //初始化syn1为0
-    for (a = 0; a < vocab_size; a++) for (b = 0; b < layer1_size; b++)
-        syn1[a * layer1_size + b] = 0;
+    
+    // syn1 初始化为0
+    for (a = 0; a < vocab_size; a++) 
+      for (b = 0; b < layer1_size; b++)
+        syn1[a * layer1_size + b] = 0;    
   }
 
-  //如果要使用负采样，则需要为syn1neg分配内存空间
-  //syn1neg是负采样时每个词的辅助向量
+  // 如果要使用负采样
+  // 则需要为 syn1neg 分配内存空间。syn1neg是负采样时每个词的辅助向量
   if (negative > 0) {
+    
+    // syn1neg 分配内存空间
     a = posix_memalign((void **)&syn1neg, 128, (long long)vocab_size * layer1_size * sizeof(real));
     if (syn1neg == NULL) {printf("Memory allocation failed\n"); exit(1);}
-    //初始化syn1neg为0
-    for (a = 0; a < vocab_size; a++) for (b = 0; b < layer1_size; b++)
+        
+    // syn1neg 初始化为0
+    for (a = 0; a < vocab_size; a++) 
+      for (b = 0; b < layer1_size; b++)
         syn1neg[a * layer1_size + b] = 0;
   }
-  for (a = 0; a < vocab_size; a++) for (b = 0; b < layer1_size; b++) {
+
+  // syn0 初始化
+  // 每一维的值为[-0.5，0.5]/layer_size范围内的随机数
+  for (a = 0; a < vocab_size; a++) 
+    for (b = 0; b < layer1_size; b++) {
       next_random = next_random * (unsigned long long)25214903917 + 11;
-      //初始化词向量syn0，每一维的值为[-0.5，0.5]/layer_size范围内的随机数
+      // 生成 syn0 的随机数
       syn0[a * layer1_size + b] = (((next_random & 0xFFFF) / (real)65536) - 0.5) / layer1_size;
     }
-  //创建Haffman二叉树
+  
+  // 创建 Haffman 二叉树
   CreateBinaryTree();
 }
 
@@ -612,9 +634,9 @@ void *TrainModelThread(void *id) {
                                           // word: 当前词在词表中的索引
     if (word == -1) continue;
     
-    for (c = 0; c < layer1_size; c++) neu1[c] = 0;     // 初始化输入词向量，neu1:输入词向量，Context的向量和
+    for (c = 0; c < layer1_size; c++) neu1[c] = 0;     // 初始化输入词向量为0，neu1:输入词向量，Context的向量和
     
-    for (c = 0; c < layer1_size; c++) neu1e[c] = 0;    // 初始化累计误差项，neu1e: 输入词的误差，即 error|pred - real|
+    for (c = 0; c < layer1_size; c++) neu1e[c] = 0;    // 初始化累计误差项为0，neu1e: 输入词的误差，即 error|pred - real|
     
     
     next_random = next_random * (unsigned long long)25214903917 + 11;   // window 是一个常数 window = 5
@@ -635,11 +657,11 @@ void *TrainModelThread(void *id) {
           if (c < 0) continue;                   // 如果当前词的位置小于0就不计算
           if (c >= sentence_length) continue;    // 如果当前词的位置大于每句话的长度也不计算
           
-          last_word = sen[c];                    //sen数组中存放的是句子中的每个词在词表中的索引
+          last_word = sen[c];                    //sen 数组中存放的是句子中的每个词在词表中的索引
           if (last_word == -1) continue;
           
           
-          for (c = 0; c < layer1_size; c++)     //计算窗口中词向量的和
+          for (c = 0; c < layer1_size; c++)     // 这里的 c 值得是一个词向量的某个维度，应该换一个变量名
             neu1[c] += syn0[c + last_word * layer1_size];
           //统计实际窗口中的有效词数
           cw++;
