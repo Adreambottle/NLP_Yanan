@@ -15,7 +15,7 @@ import os
 import torch.nn as nn
 import torch
 import numpy as np
-
+from torch.utils.data import Dataset, DataLoader
 import random
 
 letter = [c for c in "abcdefghijklmnopqrstuvwxyz"]
@@ -49,7 +49,26 @@ while(1):
     if cnt >= 1000:
         break
 
+label = [True] * len(pos_set) + [False] * len(neg_set)
+data = pos_set + neg_set
 
+class Trainset(Dataset):
+    def __init__(self, data, label):
+        self.data = data
+        self.label = label
+
+    def __getitem__(self, index):
+        data_i = self.data[index]
+        label_i = self.label[index]
+
+        return data_i, label_i
+
+    def __len__(self):
+        return len(self.data)
+
+MyDataset = Trainset(data, label)
+
+TrainLoader = DataLoader(dataset=MyDataset, batch_size=4, shuffle=True)
 
 
 for i in range(21):
