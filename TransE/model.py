@@ -58,5 +58,6 @@ def tri_distance(triple, entity_embedding, relation_embedding, norm=2):
     tail = triple[:, 2]
 
     distance = entity_embedding(head) + relation_embedding(relation) - entity_embedding(tail)
-    return distance.norm(p=norm, dim=1)
+    distance = distance.norm(p=norm, dim=1)
+    return distance
 
