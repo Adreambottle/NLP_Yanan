@@ -49,7 +49,7 @@ class relation_embedding(nn.Module):
         self.rel_emb.weight.data[:-1, :].div_(self.rel_emb.weight.data[:-1, :].norm(p=1, dim=1, keepdim=True))
 
     def forward(self, x):
-        return self.ent_emb(x)
+        return self.rel_emb(x)
 
 
 def tri_distance(triple, entity_embedding, relation_embedding, norm=2):

@@ -34,14 +34,14 @@ data_emb = emb(data)
 pos_set = []
 for o in range(1, 25):
     for i in range(25 - o):
-        pos_set.append((i, "A"+str(25 - o), i+1))
+        pos_set.append((i, 25 - o, i+1))
 
 neg_set = []
 cnt = 0
 while(1):
     h = random.randint(0, 25)
     t = random.randint(0, 25)
-    r = "A" + str(random.randint(1, 25))
+    r = random.randint(1, 25)
     triple = (h, r, t)
     if triple not in pos_set:
         neg_set.append(triple)
@@ -51,6 +51,7 @@ while(1):
 
 label = [True] * len(pos_set) + [False] * len(neg_set)
 data = pos_set + neg_set
+
 
 class Trainset(Dataset):
     def __init__(self, data, label):
@@ -68,11 +69,28 @@ class Trainset(Dataset):
 
 MyDataset = Trainset(data, label)
 
+
 TrainLoader = DataLoader(dataset=MyDataset, batch_size=4, shuffle=True)
 
 
-for i in range(21):
-    pos_A_set.append((i, "A1", i+5))
+from model import entity_embedding, relation_embedding
+
+
+ent_emb = entity_embedding(26, 5)
+rel_emb = relation_embedding(25, 5)
+
+
+for (data, label) in TrainLoader:
+
+    data, label = next(iter(TrainLoader))
+
+    h = data[0]
+    r = data[1]
+    t = data[2]
+
+    h_emb = ent_emb(h)
+    r_emb = rel_emb(r)
+    t_emb = ent_emb(t)
 
 
 train_path = os.path.join(path, "train.txt")
