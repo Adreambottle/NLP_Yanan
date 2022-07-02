@@ -761,6 +761,7 @@ void *TrainModelThread(void *id) {
       }
     }
 
+
     //如果使用的是skip-gram模型：输入中心词，来预测该单词的上下文
     else {
 
