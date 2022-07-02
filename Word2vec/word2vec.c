@@ -32,29 +32,42 @@ typedef float real;                    // 把 float 定义为 real，真的没�
 
 // 定义每个词的基本结构类
 struct vocab_word {
-  long long cn;   // 词频，从训练集中计数或者直接提供词频文件
-  int *point;     // Haffman树中从根节点到该词的路径，存放的是路径上每个节点的索引  
-  char *word,     // word 是该词的字面值
-       *code,     // code 是该词的 haffman 编码
-       codelen;   // codelen 为该词haffman编码的长度
+  long long cn;           // 词频，从训练集中计数或者直接提供词频文件
+  int *point;             // Haffman树中从根节点到该词的路径，存放的是路径上每个节点的索引  
+  char *word,             // word 是该词的字面值
+       *code,             // code 是该词的 haffman 编码
+       codelen;           // codelen 为该词haffman编码的长度
 };
 
 char train_file[MAX_STRING], output_file[MAX_STRING];
 char save_vocab_file[MAX_STRING], read_vocab_file[MAX_STRING];
 
-//词表，该数组的下标表示这个词在此表中的位置，也称之为这个词在词表中的索引
+// 词表，该数组的下标表示这个词在此表中的位置，也称之为这个词在词表中的索引
 struct vocab_word *vocab;
 
-//词hash表，该数组的下标为每个词的hash值，由词的字面ASCII码计算得到。vocab_hash[hash]中储存的是该词在词表中的索引
-int binary = 0, cbow = 1, debug_mode = 2, window = 5, min_count = 5, num_threads = 12, min_reduce = 1;
+int binary = 0, 
+    cbow = 1, 
+    debug_mode = 2, 
+    window = 5, 
+    min_count = 5, 
+    num_threads = 12, 
+    min_reduce = 1;
+
+// 词hash表，该数组的下标为每个词的hash值，由词的字面ASCII码计算得到。vocab_hash[hash]中储存的是该词在词表中的索引
 int *vocab_hash;
 
-//vocab_max_size是一个辅助变量，每次当词表大小超出vocab_max_size时，一次性将词表大小增加1000
-//vocab_size为训练集中不同单词的个数，即词表的大小，在未构建词表时，大小当然为0
-//layer1_size为词向量的长度
-long long vocab_max_size = 1000, vocab_size = 0, layer1_size = 100;
-long long train_words = 0, word_count_actual = 0, iter = 5, file_size = 0, classes = 0;
-real alpha = 0.025, starting_alpha, sample = 1e-3;
+
+long long vocab_max_size = 1000,       // vocab_max_size 是一个辅助变量，每次当词表大小超出 vocab_max_size 时，一次性将词表大小增加1000
+          vocab_size = 0,              // vocab_size为训练集中不同单词的个数，即词表的大小，在未构建词表时，大小当然为0
+          layer1_size = 100;           // layer1_size为词向量的长度
+long long train_words = 0, 
+          word_count_actual = 0, 
+          iter = 5, 
+          file_size = 0, 
+          classes = 0;
+real alpha = 0.025, 
+     starting_alpha, 
+     sample = 1e-3;
 
 
 
@@ -557,9 +570,8 @@ void *TrainModelThread(void *id) {
   real f, g;                     // real 就是 float 的意思
   clock_t now;
   
-  //neu1:输入词向量，在CBOW模型中是 Context(x) 即窗口内中各个词的向量和，在skip-gram模型中是中心词的词向量
-  //neu1e:累计误差项，即 |real - pred|, neu1 和 neu1e 都是内存上连续100个float的向量，
-
+  // neu1:  输入词向量，在CBOW模型中是 Context(x) 即窗口内中各个词的向量和，在skip-gram模型中是中心词的词向量
+  // neu1e: 累计的误差项，即 |real - pred|, neu1 和 neu1e 都是内存上连续100个float的向量，
   real *neu1 = (real *)calloc(layer1_size, sizeof(real));     // layer1_size = 100，表示每个单词映射成100个维度
   real *neu1e = (real *)calloc(layer1_size, sizeof(real));
   
@@ -571,10 +583,10 @@ void *TrainModelThread(void *id) {
 
   //开始主循环
   while (1) {
-    //每训练约1000词输出一次训练进度
-    if (word_count - last_word_count > 10000) {
-      //word_count_actual是所有线程总共当前处理的词数
-      word_count_actual += word_count - last_word_count;
+    
+    if (word_count - last_word_count > 10000) {             // 上次训练的文本量和本次训练的文本量，每训练约1000词输出一次训练进度
+      
+      word_count_actual += word_count - last_word_count;    // word_count_actual 是所有线程总共当前处理的词数
       last_word_count = word_count;
       if ((debug_mode > 1)) {
         now = clock();
@@ -634,7 +646,7 @@ void *TrainModelThread(void *id) {
 
     
     word = sen[sentence_position];        // sen:当前从文件中读取的待处理的句子，存放的是每个词在词表中的索引
-                                          // word: 当前词在词表中的索引
+                                          // word: 当前词在句子中的索引
     if (word == -1) continue;
     
     for (c = 0; c < layer1_size; c++) neu1[c] = 0;     // 初始化输入词向量为0，neu1:输入词向量，Context的向量和
@@ -675,32 +687,37 @@ void *TrainModelThread(void *id) {
 
         //如果采用分层softmax优化
         //根据Haffman树上从根节点到当前词的叶节点的路径，遍历所有经过的中间节点
-        if (hs) for (d = 0; d < vocab[word].codelen; d++) {
+        if (hs) {
+          for (d = 0; d < vocab[word].codelen; d++) {     // d 代表的是一个单词的 Haffman 编码里面的每一个节点
             f = 0;
-            //l2为当前遍历到的中间节点的向量在syn1中的起始位置
-            l2 = vocab[word].point[d] * layer1_size;
-            //f为输入向量neu1与中间结点向量的内积
-            for (c = 0; c < layer1_size; c++) f += neu1[c] * syn1[c + l2];
-            //检测f有没有超出sigmoid函数表的范围
-            if (f <= -MAX_EXP) continue;
-            else if (f >= MAX_EXP) continue;
-            //如果没有超出范围则对f进行sigmoid变换
-            else f = expTable[(int)((f + MAX_EXP) * (EXP_TABLE_SIZE / MAX_EXP / 2))];
-            // g是梯度和学习率的乘积
-            //学习率越大，则错误分类的惩罚也越大，对中间向量的修正量也越大
-            //注意word2vec中将Haffman编码为1的节点定义为负类，而将编码为0的节点定义为正类
-            //即一个节点的label=1-d
-            g = (1 - vocab[word].code[d] - f) * alpha;
-            // 根据计算得到的修正量g和中间节点的向量更新累计误差
-            for (c = 0; c < layer1_size; c++) neu1e[c] += g * syn1[c + l2];
+            
+            l2 = vocab[word].point[d] * layer1_size;      // l2为当前遍历到的中间节点的向量在syn1中的起始位置         
+            for (c = 0; c < layer1_size; c++){            // 对于 layer1_size 也就 model dimension 100，每一个维度都更新
+              f += neu1[c] * syn1[c + l2];                // f为输入向量neu1与中间结点向量syn1的内积
+            }
+            if (f <= -MAX_EXP) continue;                  // 检测f有没有超出sigmoid函数表的范围
+            else if (f >= MAX_EXP) continue;              // 如果没有超出范围则对f进行sigmoid变换
+            
+            else f = expTable[(int)((f + MAX_EXP) * (EXP_TABLE_SIZE / MAX_EXP / 2))];   // 通过查 expTable 表得到梯度的值
+            
+                                                          // f 是通过查表得到的梯度
+                                                          // 注意 word2vec 中将 Haffman 编码为1的节点定义为负类，而将编码为0的节点定义为正类
+                                                          // word 是词表中的每一个单词，code[d] 代表的是 word 路径上的节点
+            g = (1 - vocab[word].code[d] - f) * alpha;    // g是梯度和学习率的乘积 g = (label-f)*alpha是一个负值，作用在中间节点向量上时，刚好起到调小效果
+            
+            for (c = 0; c < layer1_size; c++){            // 根据计算得到的修正量g和中间节点的向量更新累计误差
+              neu1e[c] += g * syn1[c + l2];               // neu1e 是累积的输入词向量的误差项
+            }
             // 根据计算得到的修正量g和输入向量更新中间节点的向量值
             // 很好理解，假设vocab[word].code[d]编码为1，即负类，其节点label为1-1=0
             // sigmoid函数得到的值为(0,1)范围内的数，大于label，很自然的，我们需要把这个中间节点的向量调小
-            // 而此时的g=(label-f)*alpha是一个负值，作用在中间节点向量上时，刚好起到调小效果
+            // 而此时的
             // 调小的幅度与sigmoid函数的计算值偏离label的幅度成正比
-            for (c = 0; c < layer1_size; c++) syn1[c + l2] += g * neu1[c];
+            for (c = 0; c < layer1_size; c++){
+              syn1[c + l2] += g * neu1[c];                // syn1 是累积的输入词向量的误差项
+            }
           }
-
+        }
         // 如果采用负采样优化
         // 遍历所有正负样本（1个正样本 + negative个负样本）
         if (negative > 0) for (d = 0; d < negative + 1; d++) {
