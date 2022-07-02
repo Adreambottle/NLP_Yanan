@@ -84,6 +84,7 @@ for (data, label) in TrainLoader:
 
     data, label = next(iter(TrainLoader))
 
+    data = torch.concat(data, axis=1)
     h = data[0]
     r = data[1]
     t = data[2]
@@ -92,11 +93,5 @@ for (data, label) in TrainLoader:
     r_emb = rel_emb(r)
     t_emb = ent_emb(t)
 
-
-train_path = os.path.join(path, "train.txt")
-validation_path = os.path.join(path, "valid.txt")
-
-train_set = data.FB15KDataset(train_path, entity2id, relation2id)
-train_generator = torch_data.DataLoader(train_set, batch_size=batch_size)
-
-
+    distance = (h_emb + r_emb - t_emb).norm(p=2, dim=1)
+    criterion = nn.MarginRankingLoss(margin=1.0, reduction='none')
