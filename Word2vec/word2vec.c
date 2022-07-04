@@ -65,17 +65,15 @@ long long train_words = 0,
           iter = 5, 
           file_size = 0, 
           classes = 0;
-real alpha = 0.025, 
-     starting_alpha, 
+
+real alpha = 0.025,                   // 设置学习率
+     starting_alpha,                  // 初始学习率，是会变化的
      sample = 1e-3;
-
-
-
-                      // real是取实数的意思
-real  *syn0,          // syn0存储的是词表中每个词的词向量
-      *syn1,          // syn1存储的是Haffman树中每个非叶节点的向量
-      *syn1neg,       // syn1neg是负采样时每个词的辅助向量
-      *expTable;      // expTable是提前计算好的Sigmoid函数表
+                                      // real就是 float
+real  *syn0,                          // syn0存储的是词表中每个词的词向量
+      *syn1,                          // syn1存储的是Haffman树中每个非叶节点的向量
+      *syn1neg,                       // syn1neg是负采样时每个词的辅助向量
+      *expTable;                      // expTable是提前计算好的Sigmoid函数表
 
 clock_t start;        //计时函数
 
@@ -83,45 +81,48 @@ int hs = 0, negative = 5;
 const int table_size = 1e8;
 int *table;
 
-//计算每个函数的能量分布表，在负采样中用到
+
+
+// 计算每个函数的能量分布表，在负采样中用到
 void InitUnigramTable() {
-  int a, i;
+  int a, i;                                             // a：能量表table的索引, i：词表的索引
   double train_words_pow = 0;
   double d1, power = 0.75;
-  //为能量表table分配内存空间，共有table_size项，table_size为一个既定的数1e8
-  table = (int *)malloc(table_size * sizeof(int)); //malloc函数分配所需的内存空间
-  //遍历词表，根据词频计算能量总值
-  for (a = 0; a < vocab_size; a++) train_words_pow += pow(vocab[a].cn, power);
-  i = 0;
-  //d1表示已遍历词的能量值占总能量的比
-  d1 = pow(vocab[i].cn, power) / train_words_pow;
-  //a：能量表table的索引
-  //i：词表的索引
-  for (a = 0; a < table_size; a++) {
+                                                        // 为能量表table分配内存空间，共有table_size项，table_size为一个既定的数1e8
+  table = (int *)malloc(table_size * sizeof(int));      // malloc函数分配所需的内存空间
+  
+  for (a = 0; a < vocab_size; a++){                     // 遍历词表，根据词频计算能量总值
+    train_words_pow += pow(vocab[a].cn, power);
+  } 
+  
+  i = 0;                                                // 对词表中的每一个单词进行循环
+  d1 = pow(vocab[i].cn, power) / train_words_pow;       // d1初始化，将
+  for (a = 0; a < table_size; a++) {                    
     table[a] = i;
-    //i号单词占据table中a的位置
-    if (a / (double)table_size > d1) {
+    if (a / (double)table_size > d1) {                  // 只有单词的词频大于已经里边的能量总值才会录入到新的词中
       i++;
-      d1 += pow(vocab[i].cn, power) / train_words_pow;
+      d1 += pow(vocab[i].cn, power) / train_words_pow;  // d1表示已遍历词的能量值占总能量的比
     }
     if (i >= vocab_size) i = vocab_size - 1;
   }
 }
 
-// 从文件中读入一个词到word，以space'',tab'\t',E0l'\n'为词的分界符
-//截去一个词中长度超过MAX_STRING的部分
-//每一行的末尾输入一个</s>
+
+
+// 从文件中读入一个词到word，以space'', tab'\t', E0l'\n'为词的分界符
+// 截去一个词中长度超过MAX_STRING的部分
+// 每一行的末尾输入一个</s>
 void ReadWord(char *word, FILE *fin)
-//fin和fout都表示是文件流指针，即FILE*，用于读写文件fin这里用于读取in.txt，fout用于向文件out.txt写入数据
+// fin和fout都表示是文件流指针，即FILE*，用于读写文件fin这里用于读取in.txt，fout用于向文件out.txt写入数据
 {
   int a = 0, ch;
-  while (!feof(fin)) //当条件不是文件尾时均执行后续代码
+  while (!feof(fin))                            // 当条件不是文件尾时均执行后续代码
   {
-    ch = fgetc(fin);// fgetc指从文件指针指向的文件中读取一个字符，读取一个字节后，光标位置后移一个字节
+    ch = fgetc(fin);                            // fgetc指从文件指针指向的文件中读取一个字符，读取一个字节后，光标位置后移一个字节
     if (ch == 13) continue;
     if ((ch == ' ') || (ch == '\t') || (ch == '\n')) {
       if (a > 0) {
-        if (ch == '\n') ungetc(ch, fin); //ungetc把一个（或多个）字符退回到stream代表的文件流中，可以理解为一个“计数器”
+        if (ch == '\n') ungetc(ch, fin);        // ungetc把一个（或多个）字符退回到stream代表的文件流中，可以理解为一个“计数器”
         break;
       }
       if (ch == '\n') {
@@ -131,7 +132,7 @@ void ReadWord(char *word, FILE *fin)
     }
     word[a] = ch;
     a++;
-    if (a >= MAX_STRING - 1) a--;   // 截去太长的单词
+    if (a >= MAX_STRING - 1) a--;               // 截去太长的单词
   }
   word[a] = 0;
 }
@@ -612,9 +613,9 @@ void *TrainModelThread(void *id) {
         if (feof(fi)) break;
         if (word == -1) continue;
         word_count++;
-        //如果读到的是回车，表示句子结束
-        if (word == 0) break;
-        //对高频词进行随机下采样，丢弃掉一些高频词，能够使低频词向量更加准确，同时加快训练速度
+        
+        if (word == 0) break;           // 如果读到的是回车，表示句子结束
+        // 对高频词进行随机下采样，丢弃掉一些高频词，能够使低频词向量更加准确，同时加快训练速度
         // 可以看作是一种平滑方法
         if (sample > 0) {
           real ran = (sqrt(vocab[word].cn / (sample * train_words)) + 1) * (sample * train_words) / vocab[word].cn;
@@ -660,47 +661,43 @@ void *TrainModelThread(void *id) {
 
     
     if (cbow) {                 // 如果使用的是CBOW模型：输入是某单词周围窗口单词的词向量，来预测该中心单词本身
-
       cw = 0;                   // cw:窗口长度（中心词除外）
-
       // 一个词的窗口为[sentence_position - window + b，sentence_position + window - b]
       // 因此窗口总长度为 2*window - 2*b + 1，单扇窗的长度是 window - b
-      for (a = b; a < window * 2 + 1 - b; a++)   // 从 b 的位置开始，遍历窗口中的每个位置
-
-        if (a != window) {                       // 去除窗口的中心词，这是我们要预测的内容，仅仅提取上下文
-          c = sentence_position - window + a;    // c 代表的是正在处理的 word 在 sentence 中文位置
-          if (c < 0) continue;                   // 如果当前词的位置小于0就不计算
-          if (c >= sentence_length) continue;    // 如果当前词的位置大于每句话的长度也不计算
+      for (a = b; a < window * 2 + 1 - b; a++)             // 从 b 的位置开始，遍历窗口中的每个位置
+        if (a != window) {                                 // 去除窗口的中心词，这是我们要预测的内容，仅仅提取上下文
           
-          last_word = sen[c];                    //sen 数组中存放的是句子中的每个词在词表中的索引
+          c = sentence_position - window + a;              // c 代表的是正在处理的 word 在 sentence 中文位置
+          
+          if (c < 0) continue;                             // 如果当前词的位置小于0就不计算
+          if (c >= sentence_length) continue;              // 如果当前词的位置大于每句话的长度也不计算
+          
+          last_word = sen[c];                              // sen 数组中存放的是句子中的每个词在词表中的索引
           if (last_word == -1) continue;
           
-          
-          for (c = 0; c < layer1_size; c++)     // 这里的 c 值得是一个词向量的某个维度，应该换一个变量名
-            neu1[c] += syn0[c + last_word * layer1_size];
-          //统计实际窗口中的有效词数
-          cw++;
+          for (c = 0; c < layer1_size; c++){               // 这里的 c 值得是一个词向量的某个维度
+            neu1[c] += syn0[c + last_word * layer1_size];  // neu1 代表的是书如此的词向量, Context(w) 的词向量之和
+          }                                                // neu1[c] 第c个维度的向量相当于
+          cw++;                                            // 统计实际窗口中的有效词数
         }
       if (cw) {
         //求平均向量和
         for (c = 0; c < layer1_size; c++) neu1[c] /= cw;
 
         //如果采用分层softmax优化
-        //根据Haffman树上从根节点到当前词的叶节点的路径，遍历所有经过的中间节点
         if (hs) {
-          for (d = 0; d < vocab[word].codelen; d++) {     // d 代表的是一个单词的 Haffman 编码里面的每一个节点
-            f = 0;
-            
+          for (d = 0; d < vocab[word].codelen; d++) {     // d 从根节点到当前词的叶节点的路径，遍历所有经过的中间节点
+            f = 0;                                        // f 存储的是梯度
             l2 = vocab[word].point[d] * layer1_size;      // l2为当前遍历到的中间节点的向量在syn1中的起始位置         
             for (c = 0; c < layer1_size; c++){            // 对于 layer1_size 也就 model dimension 100，每一个维度都更新
-              f += neu1[c] * syn1[c + l2];                // f为输入向量neu1与中间结点向量syn1的内积
+              f += neu1[c] * syn1[c + l2];                // f为输入向量neu1与中间结点向量syn1的内积，neu1是输入词向量
             }
             if (f <= -MAX_EXP) continue;                  // 检测f有没有超出sigmoid函数表的范围
             else if (f >= MAX_EXP) continue;              // 如果没有超出范围则对f进行sigmoid变换
             
             else f = expTable[(int)((f + MAX_EXP) * (EXP_TABLE_SIZE / MAX_EXP / 2))];   // 通过查 expTable 表得到梯度的值
             
-                                                          // f 是通过查表得到的梯度
+                                                          // f 是通过查表得到的梯度，vocab[word].code[d]编码为1，即负类，其节点label为1-1=0
                                                           // 注意 word2vec 中将 Haffman 编码为1的节点定义为负类，而将编码为0的节点定义为正类
                                                           // word 是词表中的每一个单词，code[d] 代表的是 word 路径上的节点
             g = (1 - vocab[word].code[d] - f) * alpha;    // g是梯度和学习率的乘积 g = (label-f)*alpha是一个负值，作用在中间节点向量上时，刚好起到调小效果
@@ -708,46 +705,44 @@ void *TrainModelThread(void *id) {
             for (c = 0; c < layer1_size; c++){            // 根据计算得到的修正量g和中间节点的向量更新累计误差
               neu1e[c] += g * syn1[c + l2];               // neu1e 是累积的输入词向量的误差项
             }
-            // 根据计算得到的修正量g和输入向量更新中间节点的向量值
-            // 很好理解，假设vocab[word].code[d]编码为1，即负类，其节点label为1-1=0
-            // sigmoid函数得到的值为(0,1)范围内的数，大于label，很自然的，我们需要把这个中间节点的向量调小
-            // 而此时的
-            // 调小的幅度与sigmoid函数的计算值偏离label的幅度成正比
+
             for (c = 0; c < layer1_size; c++){
-              syn1[c + l2] += g * neu1[c];                // syn1 是累积的输入词向量的误差项
+              syn1[c + l2] += g * neu1[c];                // syn1 是非叶节点需要更新的词向量
             }
           }
         }
-        // 如果采用负采样优化
-        // 遍历所有正负样本（1个正样本 + negative个负样本）
-        if (negative > 0) for (d = 0; d < negative + 1; d++) {
-            if (d == 0) {            // 第一次循环处理的是目标单词，即正样本
-              target = word;
-              label = 1;
-            } else {                 // 除了第一次的循环都是负采样
 
-              //从能量表中随机抽取负样本，下一个随机数就是上一个随机数乘一个大数，加上11 然后位移16个二进制位，然后再整除
-              next_random = next_random * (unsigned long long)25214903917 + 11;
-              target = table[(next_random >> 16) % table_size];
+        // 如果采用负采样优化    
+        if (negative > 0){                                // 遍历所有正负样本
+          for (d = 0; d < negative + 1; d++) {            // 对于 1个正样本 + negative个负样本
+            if (d == 0) {                                 // 第一次循环处理的是目标单词，即正样本
+              target = word;                              
+              label = 1;
+            } else {                                      // 除了第一次的循环都是负采样            
+              next_random = next_random * (unsigned long long)25214903917 + 11;     // 从能量表中随机抽取负样本，下一个随机数就是上一个随机数乘一个大数，加上11
+              target = table[(next_random >> 16) % table_size];                     // 然后位移16个二进制位，然后再整除
               if (target == 0) target = next_random % (vocab_size - 1) + 1;
-              if (target == word) continue;     // 负采样取到自己了就 continue，取下一个负样本
+              if (target == word) continue;               // 负采样取到自己了就 continue，取下一个负样本
               label = 0;
             }
 
-            //在负采样优化中，每个词在syn1neg数组中对应一个辅助向量
-            //此时的l2为syn1neg中目标单词向量的起始位置
-            l2 = target * layer1_size;
-            f = 0;
-            //f为输入向量neu1与辅助向量的内积
-            for (c = 0; c < layer1_size; c++) f += neu1[c] * syn1neg[c + l2];
-            if (f > MAX_EXP) g = (label - 1) * alpha;
-            else if (f < -MAX_EXP) g = (label - 0) * alpha;
-            //g=(label-f)*alpha
+            l2 = target * layer1_size;                          // 在负采样优化中，每个词在syn1neg数组中对应一个辅助向量
+            f = 0;                                              // 此时的l2为syn1neg中目标单词向量的起始位置
+            
+            for (c = 0; c < layer1_size; c++){
+              f += neu1[c] * syn1neg[c + l2];                   // f为输入向量neu1与辅助向量的内积
+            }
+            if (f > MAX_EXP) g = (label - 1) * alpha;           // 如果太大超出 MAX_EXP 就用 0 代替
+            else if (f < -MAX_EXP) g = (label - 0) * alpha;     // 如果太小超出-MAX_EXP 就用 alpha 代替
+                                                                // g = (label-f)*alpha
             else g = (label - expTable[(int)((f + MAX_EXP) * (EXP_TABLE_SIZE / MAX_EXP / 2))]) * alpha;
-            //用辅助向量和g更新累计误差
-            for (c = 0; c < layer1_size; c++) neu1e[c] += g * syn1neg[c + l2];
-            //用输入向量和g更新辅助向量
-            for (c = 0; c < layer1_size; c++) syn1neg[c + l2] += g * neu1[c];
+                                                                // 用辅助向量和g更新累计误差
+            for (c = 0; c < layer1_size; c++){
+              neu1e[c] += g * syn1neg[c + l2];                  // 用梯度更新 neu1e 输入词的误差项的每一个维度
+            }
+            for (c = 0; c < layer1_size; c++){
+              syn1neg[c + l2] += g * neu1[c];                   // 用输入向量和g更新负向量的词向量
+            }
           }
         // 根据获得的累计误差，更新context(w)中每个词的词向量
         for (a = b; a < window * 2 + 1 - b; a++) if (a != window) {
@@ -758,6 +753,7 @@ void *TrainModelThread(void *id) {
             if (last_word == -1) continue;
             for (c = 0; c < layer1_size; c++) syn0[c + last_word * layer1_size] += neu1e[c];
           }
+        }
       }
     }
 
@@ -766,18 +762,18 @@ void *TrainModelThread(void *id) {
     else {
 
       //因为需要预测context(w)中的每个词，因此需要循环2window-2b+1次遍历整个窗口
-      //遍历时跳过中心词
-      for (a = b; a < window * 2 + 1 - b; a++) if (a != window) {
+      
+      for (a = b; a < window * 2 + 1 - b; a++) if (a != window) {      // 遍历时跳过中心词
           c = sentence_position - window + a;
           if (c < 0) continue;
           if (c >= sentence_length) continue;
-          //last_word为当前待预测的上下文单词
-          last_word = sen[c];
+          
+          last_word = sen[c];                                      // last_word为当前待预测的上下文单词
           if (last_word == -1) continue;
-          //l1为当前单词的词向量在syn0中的起始位置
-          l1 = last_word * layer1_size;
-          //初始化累计误差
-          for (c = 0; c < layer1_size; c++) neu1e[c] = 0;
+          
+          l1 = last_word * layer1_size;                            // l1为当前单词的词向量在syn0中的起始位置
+         
+          for (c = 0; c < layer1_size; c++) neu1e[c] = 0;          // 初始化累计误差
 
 
           // 如果采用分层softmax优化
