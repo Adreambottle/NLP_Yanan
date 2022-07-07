@@ -50,10 +50,19 @@ class EncoderRNN(nn.Module):
             [num_layers*num_directions, batch_size, hidden_size]
         '''
         
-        embedded = self.embedding(input_seq) 
+        # [B, L] -> [B, L, D] 
+        embedded = self.embedding(input_seq)       
+        
+        # [B, L, D] -> [B, P, D], packed the RNN embedded data into packs 
         packed = torch.nn.utils.rnn.pack_padded_sequence(embedded, input_lengths)
+        
+        # [B, P, D] -> [B, P, H]/[B, P, 2H] use gru for packed embeddings, hidden from none to conveyor value
         outputs, hidden = self.gru(packed, hidden)
+        
+        # [B, P, H] -> [B, L, H] / [B, P, 2H] -> [B, L, 2H] Return the unpacked data
         outputs, _ = torch.nn.utils.rnn.pad_packed_sequence(outputs)
+        
+        # [B, L, 2H] ->  [B, L, H] Use the outputs
         outputs = outputs[:, :, :self.hidden_size] + outputs[:, : ,self.hidden_size:]
         return outputs, hidden
 

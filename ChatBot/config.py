@@ -21,19 +21,19 @@ class Config:
     bidirectional = True              # whether use bidirection for the Encoder-RNN
     hidden_size = 256
     embedding_dim = 256
-    method = 'dot'                    #attention method
-    dropout = 0                       #是否使用dropout
-    clip = 50.0                       #梯度裁剪阈值
-    num_layers = 2                    #Encoder-RNN层数
+    method = 'dot'                    # attention method
+    dropout = 0                       # 是否使用dropout
+    clip = 50.0                       # 梯度裁剪阈值
+    num_layers = 2                    # Encoder-RNN层数
     learning_rate = 1e-3
-    teacher_forcing_ratio = 1.0       #teacher_forcing比例
+    teacher_forcing_ratio = 1.0       # teacher_forcing比例
     decoder_learning_ratio = 5.0
     '''
     训练周期信息
     '''
     epoch = 6000
-    print_every = 1                  #每隔print_every个Iteration打印一次
-    save_every = 50                  #每隔save_every个Epoch打印一次 
+    print_every = 1                  # 每隔print_every个Iteration打印一次
+    save_every = 50                  # 每隔save_every个Epoch打印一次 
     '''
     GPU
     '''
